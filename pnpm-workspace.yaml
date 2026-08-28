@@ -1,3 +1,13 @@
+onlyBuiltDependencies:
+  - "@mongodb-js/zstd"
+  - core-js
+  - core-js-pure
+  - esbuild
+  - msgpackr-extract
+  - node-liblzma
+  - sharp
+  - workerd
+
 minimumReleaseAge: 11520
 minimumReleaseAgeExclude:
   - "@every-app/*"
@@ -94,3 +104,13 @@ overrides:
   mysql2: "^3.23.1"
   "nanoid@3": "^3.3.18"
   "toml@4": "^4.2.0"
+
+allowBuilds:
+  '@mongodb-js/zstd': true
+  core-js: true
+  core-js-pure: true
+  esbuild: true
+  msgpackr-extract: true
+  node-liblzma: true
+  sharp: true
+  workerd: true
