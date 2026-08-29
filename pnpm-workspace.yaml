@@ -74,7 +74,7 @@ overrides:
   undici: "^7.29.0"
 
 allowBuilds:
-  '@mongodb-js/zstd': true
+  "@mongodb-js/zstd": true
   core-js: true
   core-js-pure: true
   esbuild: true
