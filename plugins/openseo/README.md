@@ -13,13 +13,13 @@ OpenSEO gives your agent real SEO data and guided workflows, so its advice is gr
 - Track organic and Google Maps rankings
 - Work with Google Search Console and Analytics data
 
-The plugin includes nine skills that guide Cursor through complete SEO workflows, plus the hosted OpenSEO MCP server for live data and project management.
+The plugin includes nine skills that guide Cursor through complete SEO workflows, plus our self-hosted OpenSEO MCP server for live data and project management.
 
 ## Connect
 
 Install the OpenSEO plugin from the Cursor Marketplace. The first time Cursor uses an OpenSEO tool, follow the OAuth prompt to sign in and approve the connection.
 
-You need an OpenSEO account. The plugin package is free and open source. Hosted OpenSEO plans and usage credits are described at [openseo.so/pricing](https://openseo.so/pricing), and OpenSEO can also be [self-hosted](https://github.com/every-app/open-seo#self-hosting).
+This plugin points at our own deployment at `https://open-seo-selfhost.support-92a.workers.dev`, not the hosted service, so no openseo.so account or subscription is involved. Access is gated by Cloudflare Access on the team email allowlist — if sign-in is refused, ask an admin to add your address.
 
 ## Try it
 
