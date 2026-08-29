@@ -20,7 +20,7 @@ Pick the option that matches how you want to install the files.
 Use this if you want the installer to show the available skills and agents.
 
 ```bash
-npx skills add every-app/open-seo
+npx skills add Lucca-AM/open-seo
 ```
 
 ### Option 2: Install all OpenSEO skills
@@ -28,7 +28,7 @@ npx skills add every-app/open-seo
 Use this if you want every OpenSEO skill.
 
 ```bash
-npx skills add every-app/open-seo --skill '*'
+npx skills add Lucca-AM/open-seo --skill '*'
 ```
 
 ### Option 3: Install all skills for Claude Code only
@@ -36,7 +36,7 @@ npx skills add every-app/open-seo --skill '*'
 Use this if the skills should be available in Claude Code only.
 
 ```bash
-npx skills add every-app/open-seo --skill '*' --agent claude-code
+npx skills add Lucca-AM/open-seo --skill '*' --agent claude-code
 ```
 
 ### Option 4: Install all skills for OpenAI Codex only
@@ -44,7 +44,7 @@ npx skills add every-app/open-seo --skill '*' --agent claude-code
 Use this if the skills should be available in Codex only.
 
 ```bash
-npx skills add every-app/open-seo --skill '*' --agent codex
+npx skills add Lucca-AM/open-seo --skill '*' --agent codex
 ```
 
 ### Option 5: Copy the skill files manually
@@ -52,7 +52,7 @@ npx skills add every-app/open-seo --skill '*' --agent codex
 Use this if you prefer to copy files into your agent's skills folder.
 
 ```bash
-git clone https://github.com/every-app/open-seo.git
+git clone https://github.com/Lucca-AM/open-seo.git
 
 # Codex
 mkdir -p ~/.codex/skills

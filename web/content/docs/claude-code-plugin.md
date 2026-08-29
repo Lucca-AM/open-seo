@@ -10,13 +10,13 @@ The OpenSEO plugin bundles OpenSEO MCP and all ten SEO Agent Skills into one ins
 Run these two commands in Claude Code:
 
 ```bash
-/plugin marketplace add every-app/open-seo
+/plugin marketplace add Lucca-AM/open-seo
 /plugin install openseo@openseo
 ```
 
 If the install summary says `Run /reload-plugins to activate.`, run that command.
 
-Claude Code connects OpenSEO MCP at `https://app.openseo.so/mcp` and enables ten skills:
+Claude Code connects OpenSEO MCP at `https://openseo.luccaam.com/mcp` and enables ten skills:
 
 - SEO Project Setup
 - SEO Coach

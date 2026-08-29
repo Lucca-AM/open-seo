@@ -10,14 +10,14 @@ The OpenSEO plugin bundles OpenSEO MCP and all ten SEO Agent Skills into one ins
 Run these commands in your terminal:
 
 ```bash
-codex plugin marketplace add every-app/open-seo
+codex plugin marketplace add Lucca-AM/open-seo
 codex plugin add openseo@openseo
 codex mcp login openseo
 ```
 
 `codex mcp login` opens a browser to approve the OpenSEO connection. If it reports that `openseo` isn't found, restart Codex first — bundled MCP servers only register after a restart, not immediately after install — then run `codex mcp login openseo` again.
 
-Codex connects OpenSEO MCP at `https://app.openseo.so/mcp` and enables ten skills:
+Codex connects OpenSEO MCP at `https://openseo.luccaam.com/mcp` and enables ten skills:
 
 - SEO Project Setup
 - SEO Coach
