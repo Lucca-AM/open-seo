@@ -29,6 +29,8 @@ jobs:
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
+          TEAM_DOMAIN=${{ secrets.TEAM_DOMAIN }}
+          POLICY_AUD=${{ secrets.POLICY_AUD }}
           EOF
 
       - name: Deploy
