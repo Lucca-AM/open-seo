@@ -16,7 +16,7 @@ Run these two commands in Claude Code:
 
 If the install summary says `Run /reload-plugins to activate.`, run that command.
 
-Claude Code connects OpenSEO MCP at `https://open-seo-selfhost.support-92a.workers.dev/mcp` and enables nine skills:
+Claude Code connects OpenSEO MCP at `https://openseo.luccaam.com/mcp` and enables nine skills:
 
 - SEO Project Setup
 - SEO Coach

@@ -19,7 +19,7 @@ The plugin includes nine skills that guide Cursor through complete SEO workflows
 
 Install the OpenSEO plugin from the Cursor Marketplace. The first time Cursor uses an OpenSEO tool, follow the OAuth prompt to sign in and approve the connection.
 
-This plugin points at our own deployment at `https://open-seo-selfhost.support-92a.workers.dev`, not the hosted service, so no openseo.so account or subscription is involved. Access is gated by Cloudflare Access on the team email allowlist — if sign-in is refused, ask an admin to add your address.
+This plugin points at our own deployment at `https://openseo.luccaam.com`, not the hosted service, so no openseo.so account or subscription is involved. Sign-in goes through Cloudflare Access with Google Workspace — if you are refused, ask an admin to add you to the Access application.
 
 ## Try it
 

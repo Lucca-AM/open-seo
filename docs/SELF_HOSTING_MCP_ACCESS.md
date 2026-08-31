@@ -8,7 +8,7 @@ with Cloudflare Access in front of the Worker.
 Cloudflare Access authenticates people in a browser. An MCP client
 (`claude mcp add --transport http ...`, Codex, the bundled plugin) sends a plain
 HTTPS request with no Access session, so Access rejects it before the Worker sees
-it. Pointing a plugin at `https://<worker>.<subdomain>.workers.dev/mcp` therefore
+it. Pointing a plugin at `https://openseo.luccaam.com/mcp` therefore
 returns 401 for every teammate until Access is told to leave that one path alone.
 
 ## Service tokens do not solve this
@@ -67,7 +67,7 @@ Issue an API key in the self-hosted app (Settings -> API keys), then:
 curl -sS -o /dev/null -w '%{http_code}\n' \
   -H 'x-api-key: oseo_YOUR_KEY' \
   -H 'Content-Type: application/json' \
-  -X POST https://<worker>.<subdomain>.workers.dev/mcp \
+  -X POST https://openseo.luccaam.com/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 

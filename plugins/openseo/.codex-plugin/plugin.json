@@ -22,7 +22,7 @@
   "skills": "./skills/",
   "mcpServers": {
     "openseo": {
-      "url": "https://open-seo-selfhost.support-92a.workers.dev/mcp"
+      "url": "https://openseo.luccaam.com/mcp"
     }
   },
   "interface": {

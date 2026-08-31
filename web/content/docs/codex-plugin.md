@@ -17,7 +17,7 @@ codex mcp login openseo
 
 `codex mcp login` opens a browser to approve the OpenSEO connection. If it reports that `openseo` isn't found, restart Codex first — bundled MCP servers only register after a restart, not immediately after install — then run `codex mcp login openseo` again.
 
-Codex connects OpenSEO MCP at `https://open-seo-selfhost.support-92a.workers.dev/mcp` and enables nine skills:
+Codex connects OpenSEO MCP at `https://openseo.luccaam.com/mcp` and enables nine skills:
 
 - SEO Project Setup
 - SEO Coach
