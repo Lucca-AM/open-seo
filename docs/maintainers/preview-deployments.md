@@ -42,10 +42,13 @@ in the env files.
   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the environment
   (repo secrets), and resolve the state-store token from the Secrets Store on
   every run. The token needs write access to Workers Scripts, KV, D1, R2, and
-  Workflows, plus **Secrets Store read** and **Account Settings read** (both
+  Workflows, plus **Secrets Store edit** and **Account Settings read** (both
   used by alchemy's state-store login, which fetches its token through a
-  temporary edge-preview worker). CI never touches Access — the gate is
-  one-time local setup.
+  temporary edge-preview worker). Secrets Store _read_ is not enough: binding
+  a secret to a Worker counts as a write against that secret, so a read-only
+  token fails the deploy with `Secrets store binding authorization failed`.
+  The secret's own scope list must also include `workers`. CI never touches
+  Access — the gate is one-time local setup.
 
 ## Cloudflare Access configuration
 

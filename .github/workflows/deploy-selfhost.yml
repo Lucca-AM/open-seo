@@ -31,6 +31,7 @@ jobs:
           BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}
           TEAM_DOMAIN=${{ secrets.TEAM_DOMAIN }}
           POLICY_AUD=${{ secrets.POLICY_AUD }}
+          SELFHOST_DOMAIN=${{ secrets.SELFHOST_DOMAIN }}
           EOF
 
       - name: Deploy
