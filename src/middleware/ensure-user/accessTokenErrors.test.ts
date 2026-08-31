@@ -64,6 +64,19 @@ describe("classifyAccessVerificationError", () => {
     expect(error.code).toBe("AUTH_CONFIG_MISSING");
   });
 
+  it("maps a non-200 JWKS response to a TEAM_DOMAIN config error", () => {
+    // jose throws a bare JOSEError here, not a JWKS* subclass, so this case
+    // silently fell through to UNAUTHENTICATED and read as an expired session.
+    const error = classifyAccessVerificationError(
+      new joseErrors.JOSEError(
+        "Expected 200 OK from the JSON Web Key Set HTTP response",
+      ),
+    );
+
+    expect(error.code).toBe("AUTH_CONFIG_MISSING");
+    expect(error.message).toContain("TEAM_DOMAIN");
+  });
+
   it("keeps other jose failures (bad signature) as UNAUTHENTICATED", () => {
     const error = classifyAccessVerificationError(
       new joseErrors.JWSSignatureVerificationFailed(),
