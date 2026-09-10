@@ -1,85 +1,91 @@
 # Letting MCP clients reach a self-hosted deployment
 
 Fork note. Applies to a self-hosted deployment running `AUTH_MODE=cloudflare_access`
-with Cloudflare Access in front of the Worker.
+with Cloudflare Access in front of the Worker. Written from the setup that is
+running now, after getting it wrong twice.
 
 ## The problem
 
-Cloudflare Access authenticates people in a browser. An MCP client
-(`claude mcp add --transport http ...`, Codex, the bundled plugin) sends a plain
+Cloudflare Access authenticates people in a browser. An MCP client sends a plain
 HTTPS request with no Access session, so Access rejects it before the Worker sees
-it. Pointing a plugin at `https://openseo.luccaam.com/mcp` therefore
-returns 401 for every teammate until Access is told to leave that one path alone.
+it. Pointing a plugin or connector at `https://<host>/mcp` returns 401 until Access
+is told how to authenticate a non-browser client.
 
-## Service tokens do not solve this
+## The answer: Managed OAuth
 
-The obvious fix is a Cloudflare Access service token, which does get a request
-past Access. It does not work here. `src/middleware/ensure-user/cloudflareAccess.ts`
-requires both claims off the Access JWT:
+Cloudflare's **Managed OAuth** exists for exactly this. Access becomes an OAuth
+authorization server for the application, and an MCP client registers itself,
+sends the user through a browser sign-in once, and then holds a token. The app's
+own AI & MCP page says so directly:
 
-```ts
-const userId = typeof payload.sub === "string" ? payload.sub : null;
-const userEmail = typeof payload.email === "string" ? payload.email : null;
-if (!userId || !userEmail) {
-  throw new AppError("UNAUTHENTICATED");
-}
-```
+> This instance is behind Cloudflare Access. MCP clients cannot connect until
+> Managed OAuth is enabled on your Access application.
 
-A service-token JWT identifies a machine, carrying `common_name` and no `email`,
-so it fails that check and the request 401s with `UNAUTHENTICATED` even though
-Access allowed it through. Supporting service tokens would mean changing how the
-app maps an Access identity to a user, which is an auth change, not configuration.
+### Turn it on
 
-## What does work: bypass Access on /mcp only
+Zero Trust → Access → Applications → your application → **Additional settings**
+→ **OAuth** → **Managed OAuth**.
 
-`/mcp` does not rely on Access for identity. It authenticates itself, before any
-Access-derived context is resolved. In `src/server/mcp/oauth-provider.ts` the
-Worker's fetch handler runs the API-key check first:
+Three settings matter:
 
-```ts
-const apiKeyResponse = await handleMcpApiKeyRequest(request, env, ctx);
-if (apiKeyResponse) return apiKeyResponse;
-```
+- **Allow localhost clients** and **Allow loopback clients** — on. CLI and desktop
+  agents (Claude Code, Codex CLI) register `http://localhost:PORT/callback`.
+- **Allowed redirect URIs** — the step that is easy to miss and produces the least
+  obvious failure. Web connectors need their HTTPS callback listed here. For
+  Claude's custom connectors:
 
-and otherwise hands the request to the MCP OAuth provider. `handleMcpApiKeyRequest`
-(`src/server/mcp/api-key-auth.ts`) is scoped to `MCP_ROUTE` (`/mcp`), accepts a key
-with the `oseo_` prefix from either an `x-api-key` header or `Authorization: Bearer`,
-and verifies it through Better Auth.
+  ```text
+  https://claude.ai/api/mcp/auth_callback
+  https://claude.com/api/mcp/auth_callback
+  ```
 
-So an Access bypass on `/mcp` does not leave the endpoint open. It moves the gate
-from Access to the app's own API key and OAuth checks, which is what the hosted
-product uses for the same route.
+  A path may end in `/*` for wildcard matching.
 
-### Zero Trust steps
+With the list empty, a web connector fails at registration with a message like
+"Couldn't register with <app>'s sign-in service" and an `ofid_…` reference. The
+upstream docs put it plainly: without these, clients cannot finish Dynamic Client
+Registration, and they log in but expose no tools.
 
-1. Zero Trust -> Access -> Applications -> **Add an application** -> Self-hosted.
-2. Set the domain to the same hostname as the main application and set the **path**
-   to `mcp`. Path-scoped applications take precedence over the hostname-wide one.
-3. Add a single policy: action **Bypass**, include **Everyone**.
-4. Leave the existing hostname-wide application untouched, so the dashboard keeps
-   its Google Workspace sign-in.
+### Verify from outside
 
-### Verify before telling the team
-
-Issue an API key in the self-hosted app (Settings -> API keys), then:
+These are public and need no session:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' \
-  -H 'x-api-key: oseo_YOUR_KEY' \
-  -H 'Content-Type: application/json' \
-  -X POST https://openseo.luccaam.com/mcp \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+curl -s https://<host>/.well-known/oauth-authorization-server | jq .registration_endpoint
+curl -s https://<host>/.well-known/oauth-protected-resource/mcp
 ```
 
-Before the bypass this returns 401 from Access. After it, a 2xx means the API-key
-path accepted the key. A 401 that mentions the API key means Access is out of the
-way and the key itself was rejected.
+The first returns the registration endpoint the client uses; the second should
+name `/mcp` as the resource and your team as the authorization server. If either
+is missing, Managed OAuth is not on.
 
-## One thing to confirm on a self-hosted deployment
+## POLICY_AUD has to match the hostname the client uses
 
-The API-key path resolves the caller with `AuthRepository.getHostedUser` and
-`getOrCreateDefaultHostedOrganization`, and its comments describe the hosted
-product. It is not gated on `AUTH_MODE`, so it should run the same way here, but
-this has not been exercised against a self-hosted deployment. Run the curl above
-and confirm a real tool call succeeds before pointing the team's plugin at this
-endpoint.
+Access applications each have their own audience tag, and the Worker validates
+tokens against exactly one, `POLICY_AUD`. If the deployment answers on more than
+one hostname (a workers.dev URL and a custom domain, say), check which application
+guards the hostname the client will actually use — an application covering both
+has one AUD, two applications have two, and the layout can change as the account
+is reorganized.
+
+Read it off the live login redirect rather than trusting a value from last week:
+
+```bash
+curl -sI -H 'Accept: text/html' https://<host>/ | grep -i '^location:'
+```
+
+The `kid` parameter in that URL is the audience tag guarding that hostname. It
+must equal `POLICY_AUD`, and a changed secret only reaches the Worker on the next
+deploy.
+
+## What does not work
+
+**Service tokens.** They get a request past Access, but the JWT identifies a
+machine — `common_name`, no `email` — and
+`src/middleware/ensure-user/cloudflareAccess.ts` requires both `sub` and `email`.
+The request 401s after Access allowed it.
+
+**A bypass policy on `/mcp`.** An earlier version of this document recommended
+this. It is worse than Managed OAuth: it turns off Access for that path and leans
+entirely on the app's own API-key check, and it is not what the product expects.
+Use Managed OAuth.
