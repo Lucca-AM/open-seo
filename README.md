@@ -1,5 +1,45 @@
 # OpenSEO
 
+> [!NOTE]
+> **This fork adds an optional Content Optimization module** on top of upstream
+> [OpenSEO](https://github.com/every-app/open-seo): entity coverage, structure
+> benchmarks, competitor term gaps, and content suggestions for any URL and
+> keyword, scored against the live SERP. It runs through your own
+> [On-Page.ai](https://api.on-page.ai) account (bring-your-own-key, like
+> DataForSEO) and adds zero new npm dependencies. Without a connected account
+> the module stays dormant, and it can be switched off entirely in Settings.
+>
+> **Quick start:** follow [Install this fork](#install-this-fork) below, then
+> open **Content Optimization** in the sidebar and click **Connect your
+> On-Page.ai account**.
+>
+> Everything else is unchanged OpenSEO, kept current with
+> [every-app/open-seo](https://github.com/every-app/open-seo).
+
+<img alt="Content Optimization report in OpenSEO: optimization score, structure vs page-1 average, entity coverage" src=".github/content-optimization.png" width="100%" />
+
+## Install this fork
+
+```bash
+git clone https://github.com/lanpublications/open-seo.git
+cd open-seo
+cp .env.example .env   # add your DataForSEO key (see docs/DATAFORSEO_API_KEY.md)
+docker build -f Dockerfile.selfhost -t open-seo:local .
+OPEN_SEO_IMAGE=open-seo:local docker compose up -d
+```
+
+Then open `http://localhost:3001`, go to **Content Optimization** under
+Research in the sidebar, and click **Connect your On-Page.ai account** to
+link your workspace.
+
+> [!IMPORTANT]
+> Build the image locally as shown above. A plain `docker compose up -d` pulls
+> the upstream prebuilt image, which does not include this module.
+
+For other setups (Cloudflare, running from source), follow the upstream guides
+below using this repo, and build from this source instead of pulling the
+published image.
+
 > Open source alternative to Semrush and Ahrefs
 
 OpenSEO is an SEO tool for _the people_. If tools like Semrush or Ahrefs are too expensive or bloated, OpenSEO is a pay-as-you-go alternative that you actually control.
