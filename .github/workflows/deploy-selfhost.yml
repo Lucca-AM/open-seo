@@ -32,6 +32,7 @@ jobs:
           TEAM_DOMAIN=${{ secrets.TEAM_DOMAIN }}
           POLICY_AUD=${{ secrets.POLICY_AUD }}
           SELFHOST_DOMAIN=${{ secrets.SELFHOST_DOMAIN }}
+          ONPAGE_API_KEY=${{ secrets.ONPAGE_API_KEY }}
           EOF
 
       - name: Deploy
