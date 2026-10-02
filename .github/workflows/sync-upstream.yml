@@ -1,0 +1,98 @@
+# Keeps our OpenSEO fork current with every-app/open-seo.
+#
+# Every Monday at 4:17am Central this merges OpenSEO's latest main into ours,
+# runs the same checks their CI runs, and, only if everything passes, pushes
+# the merge and starts "Deploy self-host to Cloudflare". Our own changes (the
+# deploy workflow, openseo.luccaam.com, the MCP docs) ride along untouched.
+#
+# If the merge clashes with our changes, or a check fails, nothing is pushed
+# and the live site stays exactly as it is. The run fails, which emails the
+# repo's admins, and its summary says what clashed. A person (or Claude)
+# resolves it once and pushes; next week carries on as normal.
+#
+# Run it by hand any time from the Actions tab: "Sync with OpenSEO".
+
+name: Sync with OpenSEO
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the merge to main
+  actions: write # start the deploy workflow (a push made with GITHUB_TOKEN does not trigger it)
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch OpenSEO
+        id: fetch
+        run: |
+          git remote add upstream https://github.com/every-app/open-seo.git
+          git fetch --quiet upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          if [ "$behind" = "0" ]; then
+            echo "Already up to date with OpenSEO. Nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### $behind new OpenSEO commits"
+              git log --no-merges --pretty='- %s (%h)' HEAD..upstream/main | head -60
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Merge
+        if: steps.fetch.outputs.behind != '0'
+        run: |
+          git config user.name "openseo-sync"
+          git config user.email "actions@github.com"
+          if ! git merge --no-edit upstream/main; then
+            {
+              echo "### The merge clashes with our changes. Nothing was deployed."
+              echo
+              echo "Files in conflict:"
+              git diff --name-only --diff-filter=U | sed 's/^/- /'
+              echo
+              echo "Resolve it locally: \`git fetch upstream && git merge upstream/main\`, fix these files, push main."
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort
+            exit 1
+          fi
+
+      # Their CI, so a broken commit on OpenSEO's main stops here.
+      - uses: actions/setup-node@v4
+        if: steps.fetch.outputs.behind != '0'
+        with:
+          node-version: 22
+
+      - name: Checks
+        if: steps.fetch.outputs.behind != '0'
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm run ci:check
+          pnpm run test:ci
+          pnpm exec vite build --mode selfhost
+          # The build regenerates the route tree; it is not a change of ours.
+          git checkout -- src/routeTree.gen.ts 2>/dev/null || true
+
+      - name: Push and deploy
+        if: steps.fetch.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin HEAD:main
+          gh workflow run deploy-selfhost.yml --ref main
+          echo "Merged, checked, pushed. Deploy started: see 'Deploy self-host to Cloudflare'." >> "$GITHUB_STEP_SUMMARY"
