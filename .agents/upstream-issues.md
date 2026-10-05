@@ -1,7 +1,10 @@
 # Issues to file against every-app/open-seo
 
 Fork-local notes. Each section is written to be pasted into a GitHub issue as-is.
-All three came out of one self-host deployment on 2026-08-31 and cost most of a
+All four were re-verified against upstream `db8bde1` on 2026-10-05 and still
+reproduce; file paths below are the current upstream ones.
+
+The first three came out of one self-host deployment on 2026-08-31 and cost most of a
 day between them.
 
 ---
@@ -48,7 +51,7 @@ A patch and a regression test are on our fork.
 
 **What happens**
 
-Following `docs/PREVIEW_DEPLOYMENTS.md` to build the CI token produces a token
+Following `docs/maintainers/preview-deployments.md` to build the CI token produces a token
 that cannot deploy:
 
 ```
@@ -58,7 +61,7 @@ AuthError: Edge-preview secret read failed: Failed to create edge preview sessio
 
 **Why**
 
-The doc says the token needs "**Secrets Store read** and **Account Settings
+The doc (line 45) says the token needs "**Secrets Store read** and **Account Settings
 read**". Cloudflare treats binding a secret to a Worker as a write against that
 secret, so the state-store login needs **Secrets Store edit**. Cloudflare's own
 docs call this out for exactly this CI case.
@@ -80,7 +83,7 @@ The deploy succeeds and the domain is gone; the zone starts answering
 
 **Why**
 
-`alchemy.run.ts` passes `domain: prod ? [...] : undefined`, and alchemy
+`deploy/alchemy/alchemy.run.ts:429` passes `domain: prod ? [...] : undefined`, and alchemy
 reconciles the Worker's domains on every deploy, so a non-prod stage asserts
 "no custom domain" each time.
 
