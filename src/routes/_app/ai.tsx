@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import {
   Tabs,
@@ -64,7 +65,47 @@ export const Route = createFileRoute("/_app/ai")({
   component: AiPage,
 });
 
+// Cloudflare Access publishes an authorization-server document on the
+// application's own origin once Managed OAuth is on, and that document is what
+// an MCP client follows to register. Probing it answers the question the
+// banner is actually asking — can a client authenticate — instead of warning
+// every cloudflare_access deployment forever, including the ones already set
+// up correctly, with no way to dismiss it.
+function useManagedOAuthConfigured(): boolean | null {
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/.well-known/oauth-authorization-server", {
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: unknown) => {
+        if (cancelled) return;
+        const endpoint =
+          body && typeof body === "object"
+            ? (body as { registration_endpoint?: unknown })
+                .registration_endpoint
+            : undefined;
+        setConfigured(typeof endpoint === "string" && endpoint.length > 0);
+      })
+      // A failed probe proves nothing either way, so stay quiet rather than
+      // accuse a working deployment of being misconfigured.
+      .catch(() => {
+        if (!cancelled) setConfigured(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return configured;
+}
+
 function AiPage() {
+  const managedOAuthConfigured = useManagedOAuthConfigured();
   const { tab = "setup" } = Route.useSearch();
   const navigate = Route.useNavigate();
   const origin = window.location.origin;
@@ -177,7 +218,8 @@ function AiPage() {
               </Card>
             </div>
 
-            {getAuthMode(import.meta.env.AUTH_MODE) === "cloudflare_access" ? (
+            {getAuthMode(import.meta.env.AUTH_MODE) === "cloudflare_access" &&
+            managedOAuthConfigured === false ? (
               <Alert variant="warning" className="mt-8">
                 <ShieldAlert />
                 <AlertDescription>

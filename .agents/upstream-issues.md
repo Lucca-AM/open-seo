@@ -90,3 +90,49 @@ Self-hosters running on their own domain need a supported way to declare it —
 we added a `SELFHOST_DOMAIN` variable on our fork. Failing that, the self-host
 docs should warn that a hand-attached custom domain will be removed by the next
 deploy, because the failure is silent and looks like a DNS problem.
+
+---
+
+## 4. The Managed OAuth warning never goes away, even once it is set up
+
+**What happens**
+
+Every `cloudflare_access` deployment shows a permanent warning on the AI & MCP
+page:
+
+> This instance is behind Cloudflare Access. MCP clients cannot connect until
+> Managed OAuth is enabled on your Access application.
+
+It keeps showing after Managed OAuth is enabled and MCP clients are connecting
+fine, and there is no way to dismiss it. On a deployment where MCP genuinely
+works, the banner states the opposite.
+
+**Why**
+
+`src/routes/_app/ai.tsx` gates it on auth mode alone:
+
+```jsx
+{getAuthMode(import.meta.env.AUTH_MODE) === "cloudflare_access" ? (
+```
+
+Nothing checks whether Managed OAuth is actually configured.
+
+**What should happen**
+
+The page can answer the question for real. Once Managed OAuth is on, Cloudflare
+serves an authorization-server document on the application's own origin, and it
+carries the `registration_endpoint` an MCP client needs:
+
+```bash
+curl -s https://<host>/.well-known/oauth-authorization-server | jq .registration_endpoint
+```
+
+Probing that from the client and showing the warning only when the endpoint is
+absent keeps the guidance for deployments that need it and retires it for the
+ones that don't. A failed probe should stay quiet rather than warn, since it
+proves nothing either way.
+
+This matters more than a cosmetic nit: when an MCP client later stops working
+for an unrelated reason — an expired OAuth grant, say — a standing banner that
+says "MCP clients cannot connect" reads as the diagnosis and sends the operator
+back to a setting that was never wrong.
