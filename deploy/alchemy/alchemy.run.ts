@@ -39,7 +39,8 @@ import {
 // The worker's runtime contract — compatibility date/flags, crons,
 // observability, placement, DO/workflow classes — has one source of truth:
 // wrangler.jsonc (what local dev and Docker self-host already run). Only
-// stage-dependent values (names, domains, env) live in this file.
+// stage-dependent values (names, domains, env, and prod's placement override)
+// live in this file.
 // unstable_readConfig ships types too loose to lint; validate what we consume.
 const wrangler = z
   .object({
@@ -464,8 +465,15 @@ export default Alchemy.Stack(
         enabled: wrangler.observability?.enabled ?? true,
         traces: { enabled: wrangler.observability?.traces?.enabled ?? false },
       },
-      placement:
-        wrangler.placement?.mode === "smart" ? { mode: "smart" } : undefined,
+      // Hosted prod pins the fetch handler next to its Postgres primary
+      // (PlanetScale, AWS us-east-1); each request makes several sequential
+      // Hyperdrive round trips. Other stages run on D1 and keep
+      // wrangler.jsonc's Smart Placement.
+      placement: prod
+        ? { mode: "targeted", region: "aws:us-east-1" }
+        : wrangler.placement?.mode === "smart"
+          ? { mode: "smart" }
+          : undefined,
       // Scheduled rank checks — src/server.ts `scheduled` handler.
       crons: wrangler.triggers.crons,
       env: {

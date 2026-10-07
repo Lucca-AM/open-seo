@@ -60,6 +60,14 @@ export const autumn = {
     finalize: (...args: Parameters<Autumn["balances"]["finalize"]>) =>
       loadAutumn().then((client) => client.balances.finalize(...args)),
   },
+  billing: {
+    attach: (...args: Parameters<Autumn["billing"]["attach"]>) =>
+      loadAutumn().then((client) => client.billing.attach(...args)),
+    openCustomerPortal: (
+      ...args: Parameters<Autumn["billing"]["openCustomerPortal"]>
+    ) =>
+      loadAutumn().then((client) => client.billing.openCustomerPortal(...args)),
+  },
 };
 
 // track() has no idempotency key, so replaying a deduction Autumn already

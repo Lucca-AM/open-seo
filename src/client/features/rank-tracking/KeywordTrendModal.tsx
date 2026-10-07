@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Copy, Download } from "lucide-react";
+import { Copy, Download, ExternalLink } from "lucide-react";
 import { reverse, sortBy } from "remeda";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
@@ -29,6 +29,7 @@ import { getRankKeywordHistory } from "@/serverFunctions/rank-tracking";
 import type { RankKeywordHistoryPoint } from "@/serverFunctions/rank-tracking";
 import { LOCATIONS } from "@/client/features/keywords/locations";
 import { formatLocationLabel } from "@/shared/keyword-locations";
+import { googleSerpUrl } from "@/shared/google-serp-url";
 import { csvChange, DeviceRankCell } from "./RankTrackingTableParts";
 import {
   RankTrendChart,
@@ -56,6 +57,7 @@ export function KeywordTrendModal({
   configId,
   domain,
   locationCode,
+  languageCode,
   locationName,
   serpDepth,
   onClose,
@@ -65,6 +67,7 @@ export function KeywordTrendModal({
   configId: string;
   domain: string;
   locationCode: number;
+  languageCode: string;
   locationName?: string;
   serpDepth: number;
   onClose: () => void;
@@ -172,7 +175,29 @@ export function KeywordTrendModal({
               &middot; Position over time
             </DialogDescription>
           </div>
-          <TrendRangeToggle value={sinceDays} onChange={setSinceDays} />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              title="Search this keyword on Google with the tracked language, country, and city"
+              render={
+                <a
+                  href={googleSerpUrl(target.keyword, {
+                    locationCode,
+                    languageCode,
+                    locationName,
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+            >
+              <ExternalLink data-icon="inline-start" />
+              Open on Google
+            </Button>
+            <TrendRangeToggle value={sinceDays} onChange={setSinceDays} />
+          </div>
         </DialogHeader>
 
         <QueryState

@@ -139,6 +139,15 @@ export async function getUsageCreditsRemaining(customerId: string): Promise<{
     );
   }
 
+  // A missing optional top-up denies access; allowed with no balance is the
+  // SDK's fail-open response, so the total is unknown rather than base-only.
+  if (topupCheck.allowed && !topupCheck.balance) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      `Autumn check returned no ${AUTUMN_SEO_DATA_TOPUP_BALANCE_FEATURE_ID} balance for customer ${customerId}`,
+    );
+  }
+
   return {
     monthlyRemaining: monthlyBalance.remaining,
     topupRemaining: topupCheck.balance?.remaining ?? 0,
@@ -553,7 +562,7 @@ function captureCreditsConsumed(
  * Deducts a USD provider cost from the org's shared usage-credit pool after
  * the fact: applies the platform markup, converts to credits, spends monthly
  * `usage_credits` first then `topup_credits`, and emits the
- * usage:credits_consume event. Only SAM's LLM spend uses this (token cost is
+ * usage:credits_consume event. LLM research uses this (token cost is
  * unknowable up front); DataForSEO calls reserve-then-settle instead. Pass
  * `monthlyRemaining` from the balance check that gated the call.
  */
@@ -563,6 +572,11 @@ export async function trackUsageCreditSpend(args: {
   creditFeature: CreditFeature;
   costUsd: number;
   monthlyRemaining: number;
+  /**
+   * Admitted research spends available top-ups, then overdraws monthly credits.
+   * Every hosted org has a monthly balance; a top-up balance may not exist yet.
+   */
+  overdraft?: { topupRemaining: number };
   properties?: Record<string, unknown>;
 }): Promise<{ monthlyCredits: number; topupCredits: number }> {
   const totalCostUsd = applyBillingMarkupUsd(args.costUsd);
@@ -571,11 +585,18 @@ export async function trackUsageCreditSpend(args: {
 
   // Clamp at 0: Autumn balances can read negative after an overdraft, and a
   // negative monthly reading here would inflate the topup deduction.
-  const monthlyDeduct = Math.min(
+  let monthlyDeduct = Math.min(
     Math.max(args.monthlyRemaining, 0),
     totalCostCredits,
   );
-  const topupDeduct = totalCostCredits - monthlyDeduct;
+  let topupDeduct = totalCostCredits - monthlyDeduct;
+  if (args.overdraft) {
+    topupDeduct = Math.min(
+      topupDeduct,
+      Math.max(args.overdraft.topupRemaining, 0),
+    );
+    monthlyDeduct = totalCostCredits - topupDeduct;
+  }
 
   const properties = {
     currency: "USD",
@@ -591,6 +612,8 @@ export async function trackUsageCreditSpend(args: {
         customerId: args.customerId,
         featureId: AUTUMN_SEO_DATA_BALANCE_FEATURE_ID,
         value: monthlyDeduct,
+        // Research explicitly permits debt; Autumn otherwise caps at zero.
+        overageBehavior: args.overdraft ? "overflow" : undefined,
         properties: {
           ...properties,
           balanceFeatureId: AUTUMN_SEO_DATA_BALANCE_FEATURE_ID,
@@ -606,6 +629,7 @@ export async function trackUsageCreditSpend(args: {
         customerId: args.customerId,
         featureId: AUTUMN_SEO_DATA_TOPUP_BALANCE_FEATURE_ID,
         value: topupDeduct,
+        overageBehavior: args.overdraft ? "overflow" : undefined,
         properties: {
           ...properties,
           balanceFeatureId: AUTUMN_SEO_DATA_TOPUP_BALANCE_FEATURE_ID,

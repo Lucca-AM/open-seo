@@ -32,6 +32,7 @@ import {
   fetchLiveSerp,
   fetchLocalSerp,
   fetchRankCheckSerp,
+  postLocalSerpTasks,
   postRankCheckTasks,
   SERP_ANALYSIS_DEPTH,
 } from "@/server/lib/dataforseo/serp";
@@ -46,6 +47,8 @@ import {
   resolveLlmMentionsLimit,
 } from "@/server/lib/dataforseo/ai";
 import type { LlmResponseModelSlug } from "@/server/lib/dataforseo/llm-models";
+import { postAiTrackingTasks } from "@/server/lib/dataforseo/ai-tracking";
+import { AI_RECORD_COST_USD } from "@/shared/ai-visibility";
 import {
   costPerSerpAtDepth,
   serpKeywordCostMultiplier,
@@ -131,6 +134,9 @@ const LLM_RESPONSE_USD: Record<
 // more. Local Finder bills every page of 10 at the first-page rate ($0.02 at
 // depth 100).
 const LOCAL_SERP_PAGE_USD = 0.002;
+// SERP Google Maps, queued at high priority. measured: task_post bills $0.0012
+// per task at depth 20.
+const LOCAL_SERP_TASK_USD = 0.0012;
 
 type ProviderUsdEstimator<I> = (input: I) => number;
 
@@ -253,6 +259,10 @@ export const dataforseoPricing = {
         ? LOCAL_SERP_PAGE_USD
         : Math.ceil(input.depth / 10) * LOCAL_SERP_PAGE_USD,
     ),
+    localTaskPost: priced(
+      postLocalSerpTasks,
+      (input) => input.locationCoordinates.length * LOCAL_SERP_TASK_USD,
+    ),
   },
   labs: {
     keywordOverview: priced(fetchKeywordOverview, (input) =>
@@ -280,6 +290,11 @@ export const dataforseoPricing = {
     crossAggregatedMetrics: priced(
       fetchLlmCrossAggregatedMetrics,
       () => LLM_MENTIONS_ONE_ROW_USD,
+    ),
+    // One standard-queue answer per task, on every tracked engine.
+    trackingTaskPost: priced(
+      postAiTrackingTasks,
+      (input) => input.tasks.length * AI_RECORD_COST_USD,
     ),
     llmResponse: priced(fetchLlmResponse, (input) => {
       const price = LLM_RESPONSE_USD[input.modelSlug];

@@ -1,15 +1,66 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import {
   AUTUMN_SEO_DATA_BALANCE_FEATURE_ID,
   AUTUMN_SEO_DATA_TOPUP_BALANCE_FEATURE_ID,
+  CHECKOUT_PLAN_IDS,
 } from "@/shared/billing";
+import { getOrganizationBillingAccount } from "@/server/billing/billing-account";
+import {
+  createBillingPortalUrl,
+  createPlanCheckoutUrl,
+  createTopUpCheckoutUrl,
+} from "@/server/billing/checkout";
 import { AppError } from "@/server/lib/errors";
 import {
   getRequiredEnvValue,
   isHostedServerAuthMode,
 } from "@/server/lib/runtime-env";
+import { getPublicOrigin } from "@/server/mcp/public-origin";
 import { requireAuthenticatedContext } from "@/serverFunctions/middleware";
+
+export const getBillingAccount = createServerFn({ method: "POST" })
+  .middleware(requireAuthenticatedContext)
+  .handler(({ context }) => getOrganizationBillingAccount(context));
+
+// Each returns a URL for the browser to open: Stripe or Autumn checkout, or
+// the Stripe billing portal.
+
+export const createPlanCheckout = createServerFn({ method: "POST" })
+  .middleware(requireAuthenticatedContext)
+  .validator(
+    z.object({
+      planId: z.enum(CHECKOUT_PLAN_IDS),
+      redirectTo: z.string(),
+    }),
+  )
+  .handler(({ data, context }) =>
+    createPlanCheckoutUrl(context, {
+      ...data,
+      origin: getPublicOrigin(getRequest()),
+    }),
+  );
+
+export const createTopUpCheckout = createServerFn({ method: "POST" })
+  .middleware(requireAuthenticatedContext)
+  .validator(z.object({ amountUsd: z.number().int().min(10).max(99) }))
+  .handler(({ data, context }) =>
+    createTopUpCheckoutUrl(context, {
+      ...data,
+      origin: getPublicOrigin(getRequest()),
+    }),
+  );
+
+export const createBillingPortalSession = createServerFn({ method: "POST" })
+  .middleware(requireAuthenticatedContext)
+  .validator(z.object({ returnTo: z.string() }))
+  .handler(({ data, context }) =>
+    createBillingPortalUrl(context, {
+      ...data,
+      origin: getPublicOrigin(getRequest()),
+    }),
+  );
 
 const AUTUMN_EVENTS_LIST_URL = "https://api.useautumn.com/v1/events.list";
 const EVENT_PAGE_LIMIT = 1000;

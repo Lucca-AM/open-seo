@@ -26,6 +26,10 @@ MCP clients should connect to:
 https://YOUR_WORKER_HOSTNAME/mcp
 ```
 
+## AI visibility tracking
+
+AI Visibility uses your `DATAFORSEO_API_KEY`; tracked questions are sent to DataForSEO and billed directly by the provider. Set `OPENROUTER_API_KEY` for setup research and generated prompt suggestions. Deployment configures background collection and a five-minute cron that dispatches due daily, weekly, or monthly checks. The app shows the collection cost before a check or schedule starts. See the [AI Visibility guide](https://openseo.so/docs/ai-visibility).
+
 ## Render JavaScript in site audits
 
 Site Audit can load pages in a browser before analyzing them. Turn on **Render JavaScript** when starting an audit if the site builds its content or links client-side (React and other single-page apps). Rendered audits take longer.

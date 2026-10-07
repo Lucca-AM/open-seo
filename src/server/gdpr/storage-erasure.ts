@@ -1,6 +1,7 @@
 import { getGoogleAccessToken } from "@/server/features/google/googleOAuth";
 import type { SamChatAgent } from "@/server/features/sam/SamChatAgent";
 import { captureServerError } from "@/server/lib/posthog";
+import { deleteProjectAiObjects } from "@/server/features/ai-visibility/services/aiVisibilityStorage";
 import {
   DUB_REFERRED_ORG_KV_PREFIX,
   DUB_REFERRED_USER_KV_PREFIX,
@@ -178,6 +179,15 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
     env.RANK_CHECK_WORKFLOW,
     payload.activeRankWorkflowIds,
   );
+  const aiWorkflowsTerminated = await terminateWorkflows(
+    env.AI_VISIBILITY_WORKFLOW,
+    [
+      ...payload.activeAiVisibilityWorkflowIds,
+      ...payload.aiVisibilityProjectIds.map(
+        (projectId) => `ai-research-setup-${projectId}`,
+      ),
+    ],
+  );
 
   const googleRevocations: GoogleRevocationResult[] = [];
   for (const account of payload.googleAccounts) {
@@ -218,12 +228,17 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
     env.R2,
     payload.organizationIds,
   );
+  let aiVisibilityObjects = 0;
+  for (const projectId of payload.aiVisibilityProjectIds) {
+    aiVisibilityObjects += await deleteProjectAiObjects(env.R2, projectId);
+  }
 
   const oauth = await deleteOauthGrants(env.OAUTH_KV, payload.userId);
   return {
     workflows: {
       auditTerminated: auditWorkflowsTerminated,
       rankTerminated: rankWorkflowsTerminated,
+      aiVisibilityTerminated: aiWorkflowsTerminated,
     },
     durableObjects: {
       sam: payload.samSessionIds.length,
@@ -236,6 +251,7 @@ async function eraseStorage(env: Env, payload: GdprStorageErasurePayload) {
     },
     r2Objects: payload.r2Keys.length,
     promptCacheObjects,
+    aiVisibilityObjects,
     googleRevocations,
   };
 }

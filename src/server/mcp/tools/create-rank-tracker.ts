@@ -16,7 +16,7 @@ import {
   projectIdSchema,
 } from "@/server/mcp/schemas";
 import { domainField } from "@/types/schemas/domain";
-import { scheduleTimeSchema } from "@/types/schemas/rank-tracking";
+import { scheduleTimeSchema } from "@/types/schemas/schedule-time";
 
 const inputSchema = {
   projectId: projectIdSchema,

@@ -119,6 +119,17 @@ describe("dataforseoPricing", () => {
       billedUsd: 0.02,
     },
     {
+      name: "Maps tasks queued at high priority",
+      estimateUsd: dataforseoPricing.serp.localTaskPost({
+        keyword: "x",
+        locationCoordinates: ["1,1,13z", "2,2,13z"],
+        languageCode: "en",
+        device: "mobile",
+        depth: 20,
+      }),
+      billedUsd: 0.0024,
+    },
+    {
       name: "Claude response with web search",
       estimateUsd: dataforseoPricing.aiSearch.llmResponse({
         userPrompt: "x",

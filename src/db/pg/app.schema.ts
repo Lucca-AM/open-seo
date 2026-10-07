@@ -73,6 +73,9 @@ export const projects = pgTable(
     // Soft delete: archived projects are hidden everywhere but their data
     // (keywords, rank tracking, audits) is preserved.
     archivedAt: timestampColumn("archived_at"),
+    // The Prompt Research keywords from AI visibility setup, one
+    // per line, most important first. Null until setup runs.
+    aiResearchKeywords: text("ai_research_keywords"),
   },
   (table) => [
     // Only the auto-created Default/null-domain project is a singleton. This
@@ -269,6 +272,9 @@ export const rankTrackingKeywords = pgTable(
     keywordDifficulty: integer("keyword_difficulty"),
     cpc: real("cpc"),
     metricsFetchedAt: timestampColumn("metrics_fetched_at"),
+    // Set when a user pins the keyword to the top of the tracker's table.
+    // Pins are shared by everyone in the project.
+    pinnedAt: timestampColumn("pinned_at"),
     createdAt: timestampColumn("created_at").notNull().default(isoNow),
   },
   (table) => [

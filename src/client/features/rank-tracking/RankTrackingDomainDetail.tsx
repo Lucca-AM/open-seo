@@ -388,6 +388,7 @@ export function RankTrackingDomainDetail({
                   configId={config.id}
                   projectId={projectId}
                   locationCode={config.locationCode}
+                  languageCode={config.languageCode}
                   locationName={config.locationName}
                   serpDepth={config.serpDepth}
                   onAddKeywords={() => setShowAddKeywords(true)}

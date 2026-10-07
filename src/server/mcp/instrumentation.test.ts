@@ -98,6 +98,16 @@ describe("instrumentMcpToolHandler", () => {
     expect(mocks.recordExternalMcpToolCall).not.toHaveBeenCalled();
   });
 
+  it("explains an out-of-credits call to the agent instead of the bare code", async () => {
+    const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () => {
+      throw new AppError("INSUFFICIENT_CREDITS");
+    });
+
+    await expect(wrapped({}, toolContext)).rejects.toThrow(
+      "doesn't have enough credits for this request",
+    );
+  });
+
   it("captures a usage event and the activation milestone for a successful external call", async () => {
     const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () =>
       okResult({ items: [{ domain: "example.com" }] }),

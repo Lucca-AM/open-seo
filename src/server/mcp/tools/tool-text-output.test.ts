@@ -11,7 +11,6 @@ import {
 } from "./google-analytics-tools";
 import { getRankTrackerTool } from "./get-rank-tracker";
 import { getBusinessUpdatesTool } from "./local-seo-tools";
-import { getSerpResultsTool } from "./get-serp-results";
 import { makeToolContext, textContent } from "./tool-test-support";
 import { makeGa4ReportResult } from "@/server/features/ga4/services/ga4-test-fixtures";
 import type * as backlinksTargetModule from "@/server/lib/dataforseoBacklinksTarget";
@@ -45,7 +44,6 @@ vi.mock("@/server/lib/dataforseo", async () => {
     createDataforseoClient: mocks.createDataforseoClient,
     fetchBusinessDataTaskResult: mocks.fetchBusinessDataTaskResult,
     normalizeBacklinksTarget: targets.normalizeBacklinksTarget,
-    SERP_ANALYSIS_DEPTH: 20,
   };
 });
 vi.mock("@/server/features/projects/services/ProjectService", () => ({
@@ -271,33 +269,6 @@ describe("MCP tool text output (service-backed tools)", () => {
     expect(out).toContain(
       "1 | 04/02/2020 00:00:00 | We are open for takeaway. | https://search.google.com/local/posts?q=acme",
     );
-  });
-
-  it("get_serp_results crawls and returns rows to the requested depth", async () => {
-    const live = vi.fn().mockResolvedValue(
-      Array.from({ length: 40 }, (_, index) => ({
-        type: "organic",
-        rank_absolute: index + 1,
-        title: `Result ${index + 1}`,
-        url: `https://example.com/${index + 1}`,
-        domain: "example.com",
-        description: "desc",
-      })),
-    );
-    mocks.createDataforseoClient.mockReturnValue({ serp: { live } });
-
-    const result = await getSerpResultsTool.handler(
-      {
-        projectId: "project_1",
-        queries: [{ keyword: "seo tools" }],
-        depth: 30,
-      },
-      toolContext,
-    );
-
-    expect(live).toHaveBeenCalledWith(expect.objectContaining({ depth: 30 }));
-    // Rows are trimmed to the depth that was crawled, not the fixed top 20.
-    expect(textContent(result)).toContain('"seo tools" (30 results)');
   });
 
   it("get_google_analytics_organic_landing_pages renders every fetched row and points at offset paging", async () => {

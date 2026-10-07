@@ -48,6 +48,7 @@ import {
   fetchLiveSerp,
   fetchLocalSerp,
   fetchRankCheckSerp,
+  postLocalSerpTasks,
   postRankCheckTasks,
 } from "@/server/lib/dataforseo/serp";
 import { fetchLighthouseResult } from "@/server/lib/dataforseo/lighthouse";
@@ -58,6 +59,7 @@ import {
   fetchLlmResponse,
   fetchLlmTopPages,
 } from "@/server/lib/dataforseo/ai";
+import { postAiTrackingTasks } from "@/server/lib/dataforseo/ai-tracking";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 import { AppError } from "@/server/lib/errors";
 
@@ -228,6 +230,14 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
         dataforseoPricing.serp.local,
         "local_seo",
       ),
+      // One queued Maps task per rank grid point; one metered charge covers
+      // them all (DataForSEO bills task_post, collection is free).
+      localTaskPost: meter(
+        customer,
+        postLocalSerpTasks,
+        dataforseoPricing.serp.localTaskPost,
+        "local_seo",
+      ),
     },
     labs: {
       // Callers (e.g. the keyword-metrics MCP tool) can attribute the spend to
@@ -277,6 +287,14 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
         customer,
         fetchLlmResponse,
         dataforseoPricing.aiSearch.llmResponse,
+      ),
+      // Posts up to 100 tracked prompts for one engine; one metered charge
+      // covers the batch (DataForSEO bills task_post, collection is free).
+      trackingTaskPost: meter(
+        customer,
+        postAiTrackingTasks,
+        dataforseoPricing.aiSearch.trackingTaskPost,
+        "ai_prompt_responses",
       ),
     },
   } as const;

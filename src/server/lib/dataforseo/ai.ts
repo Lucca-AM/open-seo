@@ -68,6 +68,7 @@ type LlmMentionsSearchInput = {
   locationCode: number;
   languageCode: string;
   limit?: number;
+  orderBy?: string[];
 };
 
 export async function fetchLlmMentionsSearch(
@@ -82,6 +83,7 @@ export async function fetchLlmMentionsSearch(
         location_code: input.locationCode,
         language_code: input.languageCode,
         limit: resolveLlmMentionsLimit(input.limit),
+        order_by: input.orderBy,
       },
     ],
     { classify: classifyAiSearchError },

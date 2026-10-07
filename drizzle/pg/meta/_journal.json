@@ -204,6 +204,20 @@
       "when": 1790316400631,
       "tag": "0028_modern_nekra",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790980924012,
+      "tag": "0029_rank_keyword_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791317073759,
+      "tag": "0030_ai_visibility",
+      "breakpoints": true
     }
   ]
 }

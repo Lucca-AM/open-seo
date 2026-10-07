@@ -1,7 +1,7 @@
 ---
 title: "The Best Open Source SEO Tools in 2026"
 description: "Open source SEO tools in 2026: OpenSEO, SerpBear, SEONaut, LibreCrawl, and SEOMachine — what each one does, what it costs to run, and how to self-host."
-author: "OpenSEO Team"
+author: "Ben Senescu"
 date: "2026-06-05"
 ---
 
@@ -25,7 +25,7 @@ _Star counts are updated monthly. Last updated June 5, 2026._
 
 ## OpenSEO
 
-OpenSEO is an open source alternative to Semrush and Ahrefs, built to be the only SEO tool that companies or small agencies need. It covers keyword research, rank tracking, backlinks, site audits, AI brand visibility, and an AI search prompt explorer. See them all on the [features page](/features).
+OpenSEO is an open source alternative to [Semrush](/semrush-alternative) and [Ahrefs](/ahrefs-alternative), built to be the only SEO tool that companies or small agencies need. It covers keyword research, rank tracking, backlinks, site audits, AI brand visibility, and an AI search prompt explorer. See them all on the [features page](/features).
 
 It relies on [DataForSEO](https://dataforseo.com), a paid service, which is the gold standard for SEO data with pay-as-you-go pricing. Many features cost money to run, but far less than a legacy SaaS seat, and the [costs are documented](/pricing).
 

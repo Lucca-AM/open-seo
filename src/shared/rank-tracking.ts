@@ -152,8 +152,7 @@ export function estimateScheduledRankCheckCredits(
     depth,
     "queued",
   );
-  const checksPerMonth =
-    scheduleInterval === "daily" ? 30 : scheduleInterval === "weekly" ? 4 : 1;
+  const checksPerMonth = scheduledChecksPerMonth(scheduleInterval);
   return {
     scheduleInterval,
     costUsd,
@@ -162,6 +161,17 @@ export function estimateScheduledRankCheckCredits(
     monthlyCostUsd: costUsd * checksPerMonth,
     monthlyCostCredits: costCredits * checksPerMonth,
   };
+}
+
+/** Planning figure for monthly cost estimates, not a calendar count. */
+export function scheduledChecksPerMonth(
+  scheduleInterval: ScheduledRankTrackingInterval,
+) {
+  return scheduleInterval === "daily"
+    ? 30
+    : scheduleInterval === "weekly"
+      ? 4
+      : 1;
 }
 
 export function isScheduledRankTrackingInterval(

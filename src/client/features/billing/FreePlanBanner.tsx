@@ -1,14 +1,30 @@
 import { Link } from "@tanstack/react-router";
 import { AppBanner } from "@/client/layout/AppBanner";
+import { BASE_PLAN_OFFER } from "@/client/features/billing/plan-offers";
 import { useCreditBalance } from "@/client/features/billing/useCreditBalance";
+import { useCanManageBilling } from "@/client/features/team/organizationQueries";
 import { BILLING_ROUTE, SUBSCRIBE_ROUTE } from "@/shared/billing";
 
 export function FreePlanBanner() {
-  const { customerQuery, isFreePlan, isOutOfCredits, isLowCredits } =
+  const { accountQuery, isFreePlan, isOutOfCredits, isLowCredits, refillDate } =
     useCreditBalance();
+  const canManageBilling = useCanManageBilling();
 
-  if (customerQuery.isLoading || !customerQuery.data) {
+  if (!accountQuery.data) {
     return null;
+  }
+
+  // Only the owner can change the plan or buy credits, so a link would lead
+  // everyone else to a page where they can't act.
+  if (!canManageBilling && (isOutOfCredits || isLowCredits)) {
+    return (
+      <AppBanner variant={isOutOfCredits ? "destructive" : "warning"}>
+        {isOutOfCredits
+          ? "Your organization has used its credits."
+          : "Your organization is running low on credits."}{" "}
+        Ask your organization owner to add more.
+      </AppBanner>
+    );
   }
 
   const creditsActionLink = isFreePlan ? (
@@ -31,8 +47,18 @@ export function FreePlanBanner() {
   if (isOutOfCredits) {
     return (
       <AppBanner variant="destructive">
-        You&rsquo;ve used all your credits. {creditsActionLink} to continue
-        using OpenSEO.
+        {isFreePlan ? (
+          <>
+            You&rsquo;ve used your free credits. {creditsActionLink} to get $
+            {BASE_PLAN_OFFER.monthlyCreditsUsd} of credits every month.
+          </>
+        ) : (
+          <>
+            You&rsquo;ve used this month&rsquo;s credits. {creditsActionLink} to
+            keep going
+            {refillDate ? `, or wait for them to refill on ${refillDate}` : ""}.
+          </>
+        )}
       </AppBanner>
     );
   }
