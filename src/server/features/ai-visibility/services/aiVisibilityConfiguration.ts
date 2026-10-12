@@ -5,7 +5,6 @@ import {
   type AiBrand,
   type AiEngine,
 } from "@/shared/ai-visibility";
-import { computeNextCheckAt } from "@/shared/rank-tracking";
 import { applyMarket } from "./aiVisibilityMarket";
 import type {
   ConfigurationRows,
@@ -84,18 +83,6 @@ export function aiBrands(
   return [...brands.values()];
 }
 
-/**
- * A new tracker's first check, at least a full week out. The shared weekly
- * slot is seven calendar days ahead at 04:00–10:00 UTC, which lands short of
- * a week for trackers created later in the UTC day.
- */
-function firstWeeklyCheckAt() {
-  const next = new Date(computeNextCheckAt("weekly"));
-  if (next.getTime() < Date.now() + 7 * 86_400_000)
-    next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString();
-}
-
 export function projectAiConfiguration(input: {
   previous: ConfigurationRows | null;
   projectId: string;
@@ -115,13 +102,17 @@ export function projectAiConfiguration(input: {
         tracker: {
           id: crypto.randomUUID(),
           projectId: input.projectId,
-          // New tracking runs weekly. The first check is a week out, so
-          // creating a tracker never charges on its own.
-          enabled: true,
+          // Fork change. Upstream creates tracking switched on and weekly,
+          // with the first check a week out. Reporting is the one place we
+          // track AI answers, and it checks monthly, so a tracker here is
+          // created off with no check booked. Setup still writes the topics
+          // and prompts; nothing runs or is charged for until someone turns
+          // tracking on themselves, which recomputes the first check.
+          enabled: false,
           ...engineColumns(["chatgpt", "gemini"]),
           ...input.projectMarket,
           scheduleInterval: "weekly",
-          nextCheckAt: firstWeeklyCheckAt(),
+          nextCheckAt: null,
           lastSkipReason: null,
           createdAt: now,
         },
