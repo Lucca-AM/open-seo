@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   AI_ENGINE_LABELS,
   aiObservationStatusLabel,
@@ -5,19 +6,18 @@ import {
   type AiPrompt,
 } from "@/shared/ai-visibility";
 import { AnswerContent } from "./AnswerContent";
-import { EngineLabel } from "./EngineLabel";
-import { aiDate } from "./shared";
 
 export function PromptAnswers({
   projectId,
   prompt,
   observation,
-  executionDate,
+  controls,
 }: {
   projectId: string;
   prompt: AiPrompt | undefined;
   observation: AiObservationRow;
-  executionDate: string;
+  /** Chooses which answer is shown. */
+  controls: ReactNode;
 }) {
   return (
     <section
@@ -26,11 +26,7 @@ export function PromptAnswers({
     >
       <div className="flex flex-wrap items-center gap-3 border-b px-5 py-3 border-border">
         <h2 className="mr-auto text-sm font-semibold">Answer</h2>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <EngineLabel engine={observation.engine} />
-          <span aria-hidden="true">·</span>
-          <time dateTime={executionDate}>{aiDate(executionDate)}</time>
-        </div>
+        {controls}
       </div>
       {prompt && observation.prompt !== prompt.text && (
         <p

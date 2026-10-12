@@ -1,5 +1,5 @@
 import type { SVGProps } from "react";
-import { OpenAIIcon } from "@/client/features/ai-mcp/AgentIcons";
+import { ClaudeIcon, OpenAIIcon } from "@/client/features/ai-mcp/AgentIcons";
 import type { AiEngine } from "@/shared/ai-visibility";
 
 // Monochrome marks from @lobehub/icons (MIT), like AgentIcons.
@@ -33,11 +33,17 @@ const GOOGLE = [
   "M12.225 5.253c2.108 0 3.529.892 4.34 1.638l3.167-3.031C17.787 2.088 15.255 1 12.225 1 7.834 1 4.043 3.469 2.197 7.062l3.63 2.763a6.77 6.77 0 016.398-4.572z",
 ];
 
+const PERPLEXITY = [
+  "M19.785 0v7.272H22.5V17.62h-2.935V24l-7.037-6.194v6.145h-1.091v-6.152L4.392 24v-6.465H1.5V7.188h2.884V0l7.053 6.494V.19h1.09v6.49L19.786 0zm-7.257 9.044v7.319l5.946 5.234V14.44l-5.946-5.397zm-1.099-.08l-5.946 5.398v7.235l5.946-5.234V8.965zm8.136 7.58h1.844V8.349H13.46l6.105 5.54v2.655zm-8.982-8.28H2.59v8.195h1.8v-2.576l6.192-5.62zM5.475 2.476v4.71h5.115l-5.115-4.71zm13.219 0l-5.115 4.71h5.115v-4.71z",
+];
+
 export function EngineIcon({
   engine,
   ...props
 }: SVGProps<SVGSVGElement> & { engine: AiEngine }) {
   if (engine === "chatgpt") return <OpenAIIcon {...props} />;
   if (engine === "gemini") return <Mark paths={GEMINI} {...props} />;
+  if (engine === "claude") return <ClaudeIcon {...props} />;
+  if (engine === "perplexity") return <Mark paths={PERPLEXITY} {...props} />;
   return <Mark paths={GOOGLE} {...props} />;
 }

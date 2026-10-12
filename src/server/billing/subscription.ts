@@ -2,7 +2,6 @@
 import { env } from "cloudflare:workers";
 import type { EnsuredUserContext } from "@/middleware/ensure-user/types";
 import {
-  AUTUMN_MANAGED_ACCESS_FEATURE_ID,
   AUTUMN_PAID_PLAN_FEATURE_ID,
   AUTUMN_SEO_DATA_BALANCE_FEATURE_ID,
   AUTUMN_SEO_DATA_TOPUP_BALANCE_FEATURE_ID,
@@ -86,15 +85,6 @@ export async function customerHasPaidPlan(
     featureId: AUTUMN_PAID_PLAN_FEATURE_ID,
   });
   return retry.allowed;
-}
-
-export async function customerHasManagedAccess(customerId: string) {
-  const result = await autumn.check({
-    customerId,
-    featureId: AUTUMN_MANAGED_ACCESS_FEATURE_ID,
-  });
-
-  return result.allowed;
 }
 
 // Remaining shared usage credits — the monthly `usage_credits` balance plus the

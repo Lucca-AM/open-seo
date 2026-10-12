@@ -28,8 +28,7 @@ const GRANT_STATUS_KEY = ["gscGrantStatus"];
 /**
  * Onboarding step for connecting Google Search Console: link the account-level
  * OAuth grant, then bind a verified property to the user's first project — the
- * same binding the project's Integrations page does. The step lives before the
- * agent-setup screen because most users leave onboarding from that screen.
+ * same binding the project's Integrations page does.
  */
 type NavigationProps = {
   onNext: () => void;

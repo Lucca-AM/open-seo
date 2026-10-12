@@ -9,7 +9,7 @@ import {
 import { EngineLabel } from "./EngineLabel";
 import { aiDate, AiMatchBadge } from "./shared";
 
-interface PromptExecution {
+export interface PromptExecution {
   observation: AiObservationRow;
   run: Pick<AiRun, "id" | "createdAt" | "trigger">;
 }

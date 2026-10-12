@@ -86,7 +86,14 @@ export function TrackerEditor({
   const prepare = useMutation({
     mutationFn: async (patch: AiTrackerPatch) => ({
       patch,
-      estimate: await estimateAiVisibilityCost({ data: { projectId, patch } }),
+      estimate: await estimateAiVisibilityCost({
+        // An unscheduled tracker is offered weekly tracking.
+        data: {
+          projectId,
+          patch,
+          scheduleInterval: state.tracker?.enabled ? undefined : "weekly",
+        },
+      }),
     }),
     onSuccess: setReview,
   });
@@ -172,21 +179,21 @@ export function TrackerEditor({
           <TrackerSetupReview
             review={review}
             enabled={Boolean(state.tracker?.enabled)}
+            creating={!state.tracker}
             pending={save.isPending}
             error={save.error}
-            canRun={
-              state.providerConfigured &&
-              !state.recentRuns.some(
-                (run) => run.status === "queued" || run.status === "running",
-              )
-            }
-            running={save.variables?.runNow ?? false}
+            canSchedule={state.providerConfigured}
+            scheduling={save.variables?.scheduleWeekly ?? false}
             onBack={() => {
               setReview(null);
               save.reset();
             }}
-            onSave={() => save.mutate({ accepted: review, runNow: false })}
-            onSaveAndRun={() => save.mutate({ accepted: review, runNow: true })}
+            onSave={() =>
+              save.mutate({ accepted: review, scheduleWeekly: false })
+            }
+            onSaveAndSchedule={() =>
+              save.mutate({ accepted: review, scheduleWeekly: true })
+            }
           />
         ) : (
           <form

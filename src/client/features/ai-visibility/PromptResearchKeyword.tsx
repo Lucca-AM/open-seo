@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
-import { SkeletonTableRows } from "@/client/components/SkeletonPresets";
-import { Button } from "@/client/components/ui/button";
+import type { RowSelectionState } from "@tanstack/react-table";
+import { Plus } from "lucide-react";
+import {
+  TableBulkActionBar,
+  TableBulkActionButton,
+} from "@/client/components/table/TableBulkActionBar";
 import { researchAiVisibilityPrompts } from "@/serverFunctions/ai-visibility";
 import { normalizeAiSuggestion } from "@/shared/ai-prompt-suggestions";
 import type { AiTrackerState } from "@/shared/ai-visibility";
-import type { AiTrackerPatch } from "@/types/schemas/ai-visibility";
 import { PromptResearchTable } from "./PromptResearchTable";
+import { TopicField } from "./TopicField";
 import { TrackerPatchReview } from "./TrackerPatchReview";
 import { AiQueryError, aiVisibilityKey } from "./shared";
 
@@ -22,10 +24,11 @@ export function PromptResearchKeyword({
   keyword: string;
 }) {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  // The prompts to track and their topic, while the user reviews them.
   const [change, setChange] = useState<{
-    patch: AiTrackerPatch;
-    description: string;
+    prompts: string[];
+    topic: string;
   } | null>(null);
   // The tracked prompts refresh tracked flags after any tracker edit. The
   // server reuses its cached provider response, so this costs no extra credits.
@@ -42,73 +45,73 @@ export function PromptResearchKeyword({
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
-  const track = () => {
-    const topic =
-      state.topics.find(
-        (name) =>
-          normalizeAiSuggestion(name) === normalizeAiSuggestion(keyword),
-      ) ?? keyword;
+  // Table order, so the review lists prompts as the user sees them.
+  const selected = (research.data?.prompts ?? [])
+    .filter((prompt) => rowSelection[prompt.text])
+    .map((prompt) => prompt.text);
+  // Defaults to the saved topic that matches the keyword, else the keyword.
+  const track = () =>
     setChange({
-      description: `Track ${selected.size} researched ${selected.size === 1 ? "prompt" : "prompts"} in the ${topic} topic.`,
-      patch: { prompts: [...selected].map((text) => ({ text, topic })) },
+      prompts: selected,
+      topic:
+        state.topics.find(
+          (name) =>
+            normalizeAiSuggestion(name) === normalizeAiSuggestion(keyword),
+        ) ?? keyword,
     });
-  };
+  const topic = change?.topic.trim();
   return (
-    <div className="space-y-5 pt-1">
-      <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          nativeButton={false}
-          render={
-            <Link
-              to="/p/$projectId/ai-visibility/research"
-              params={{ projectId }}
+    <>
+      <TableBulkActionBar
+        selectedCount={selected.length}
+        onClear={() => setRowSelection({})}
+        actions={
+          <div className="flex items-center px-1.5">
+            <TableBulkActionButton
+              icon={<Plus className="size-3.5" />}
+              onClick={track}
+            >
+              Track prompts
+            </TableBulkActionButton>
+          </div>
+        }
+      />
+      <PromptResearchTable
+        prompts={research.data?.prompts ?? []}
+        rowSelection={rowSelection}
+        onRowSelectionChange={setRowSelection}
+        isLoading={research.isPending}
+        error={
+          research.isError ? (
+            <AiQueryError
+              error={research.error}
+              retry={() => {
+                void research.refetch();
+              }}
             />
-          }
-        >
-          <ArrowLeft /> Back
-        </Button>
-      </div>
-      <h1 className="text-2xl font-semibold tracking-tight">{keyword}</h1>
-      <div className="overflow-hidden rounded-lg border bg-card border-border">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 border-border">
-          <h2 className="font-medium">Prompts</h2>
-          <Button size="sm" disabled={!selected.size} onClick={track}>
-            Track selected{selected.size ? ` (${selected.size})` : ""}
-          </Button>
-        </div>
-        {research.isPending ? (
-          <SkeletonTableRows rows={8} columns={4} className="p-4" />
-        ) : research.isError ? (
-          <AiQueryError
-            error={research.error}
-            retry={() => {
-              void research.refetch();
-            }}
-          />
-        ) : !research.data.prompts.length ? (
-          <p className="p-10 text-center text-sm text-muted-foreground">
-            No prompts found for “{keyword}”. Try a shorter, broader term.
-          </p>
-        ) : (
-          <PromptResearchTable
-            prompts={research.data.prompts}
-            selected={selected}
-            onToggle={(text) => {
-              const next = new Set(selected);
-              if (!next.delete(text)) next.add(text);
-              setSelected(next);
-            }}
-          />
-        )}
-      </div>
+          ) : undefined
+        }
+        empty={{
+          title: `No prompts found for “${keyword}”`,
+          description: "Try a shorter, broader term.",
+        }}
+        toolbar={
+          <div className="border-b px-4 py-3 border-border">
+            <h2 className="font-medium">Prompts about “{keyword}”</h2>
+          </div>
+        }
+      />
       {change && (
         <TrackerPatchReview
           projectId={projectId}
           state={state}
-          patch={change.patch}
-          description={change.description}
+          patch={{
+            prompts: change.prompts.map((text) => ({
+              text,
+              topic: topic || undefined,
+            })),
+          }}
+          canSave={Boolean(topic)}
           onClose={() => setChange(null)}
           onSaved={(next) => {
             queryClient.setQueryData(
@@ -116,10 +119,16 @@ export function PromptResearchKeyword({
               next,
             );
             setChange(null);
-            setSelected(new Set());
+            setRowSelection({});
           }}
-        />
+        >
+          <TopicField
+            topics={state.topics}
+            value={change.topic}
+            onChange={(name) => setChange({ ...change, topic: name })}
+          />
+        </TrackerPatchReview>
       )}
-    </div>
+    </>
   );
 }

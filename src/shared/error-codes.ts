@@ -10,6 +10,7 @@ const ERROR_CODES = [
   "AUDIT_CAPACITY_REACHED",
   "AUDIT_PAGE_LIMIT_EXCEEDED",
   "AUDIT_ALREADY_RUNNING",
+  "AUDIT_RENDERING_UNAVAILABLE",
   "VALIDATION_ERROR",
   "UNKNOWN_LOCATION",
   "CRAWL_TARGET_BLOCKED",
@@ -41,6 +42,7 @@ const NON_REPORTABLE_ERROR_CODES = new Set<ErrorCode>([
   "AUDIT_CAPACITY_REACHED",
   "AUDIT_PAGE_LIMIT_EXCEEDED",
   "AUDIT_ALREADY_RUNNING",
+  "AUDIT_RENDERING_UNAVAILABLE",
   // An external provider (DataForSEO) failing on its own side. Nothing in the
   // app to fix, and it drowned real exceptions. Note the error handlers only
   // log what they capture, so every throw site warns on its own line to keep

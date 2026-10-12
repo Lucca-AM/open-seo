@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- application table declarations */
 import {
   sqliteTable,
   text,
@@ -403,11 +404,8 @@ export const projectActivationState = sqliteTable("project_activation_state", {
     .default(sql`(current_timestamp)`),
 });
 
-// Point-in-time backlink profile summaries for the project's own domain,
-// written by the dashboard's visit-triggered refresh. DataForSEO's summary
-// already carries new/lost counts, so one snapshot renders a full card;
-// rows accumulate into history for future trend views. The domain is stored
-// per row so a later project-domain change doesn't rewrite history.
+// Retained backlink profile history. The dashboard no longer writes snapshots.
+// Each row keeps its original domain when the project website changes.
 export const backlinkSnapshots = sqliteTable(
   "backlink_snapshots",
   {
@@ -486,3 +484,5 @@ export const crawlerCredentials = sqliteTable(
     ),
   ],
 );
+
+export { dataRefreshClaims } from "./dashboard.schema";

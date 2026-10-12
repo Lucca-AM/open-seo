@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  queryOptions,
+  useMutation,
+  useQuery,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { FormDialog } from "@/client/components/FormDialog";
 import { Button } from "@/client/components/ui/button";
@@ -25,6 +31,57 @@ import {
   withBrowserTimeZone,
 } from "@/client/features/rank-tracking/scheduleTime";
 import { AiLoading, AiQueryError, aiMoney, aiVisibilityKey } from "./shared";
+
+const costEstimateQueryOptions = ({
+  projectId,
+  mode,
+  scheduleInterval,
+  promptIds,
+}: {
+  projectId: string;
+  mode: "check" | "schedule";
+  scheduleInterval: AiScheduleInterval;
+  promptIds?: string[];
+}) =>
+  queryOptions({
+    queryKey: [
+      ...aiVisibilityKey(projectId),
+      "estimate",
+      mode,
+      scheduleInterval,
+      promptIds,
+    ],
+    queryFn: () =>
+      estimateAiVisibilityCost({
+        data: {
+          projectId,
+          promptIds,
+          scheduleInterval: mode === "schedule" ? scheduleInterval : undefined,
+        },
+      }),
+    // Price the tracker as it is now each time the dialog opens, showing the
+    // price the page preloaded while that runs.
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+/** Starts pricing a run before Run now is clicked, so the dialog opens on a price. */
+export function prefetchRunNowCost(
+  queryClient: QueryClient,
+  projectId: string,
+  tracker: AiTracker,
+  promptIds?: string[],
+) {
+  void queryClient.prefetchQuery(
+    costEstimateQueryOptions({
+      projectId,
+      mode: "check",
+      scheduleInterval: tracker.scheduleInterval,
+      promptIds,
+    }),
+  );
+}
 
 export function TrackingCostReview({
   projectId,
@@ -54,29 +111,18 @@ export function TrackingCostReview({
   );
   const [scheduleTimeEdited, setScheduleTimeEdited] = useState(false);
   const estimate = useQuery({
-    queryKey: [
-      ...aiVisibilityKey(projectId),
-      "estimate",
+    ...costEstimateQueryOptions({
+      projectId,
       mode,
       scheduleInterval,
       promptIds,
-    ],
-    queryFn: () =>
-      estimateAiVisibilityCost({
-        data: {
-          projectId,
-          promptIds,
-          scheduleInterval: mode === "schedule" ? scheduleInterval : undefined,
-        },
-      }),
+    }),
     placeholderData: keepPreviousData,
-    // Price the tracker as it is now each time the dialog opens.
-    staleTime: 0,
-    gcTime: 0,
-    retry: false,
-    refetchOnWindowFocus: false,
   });
   const cost = estimate.data;
+  // Run now collects live answers; scheduled runs use the cheaper queue.
+  const runCostUsd =
+    (mode === "check" ? cost?.runNowCostUsd : cost?.costUsd) ?? 0;
   const start = useMutation({
     mutationFn: async () => {
       if (!cost) throw new Error("Review the estimate before starting.");
@@ -100,7 +146,7 @@ export function TrackingCostReview({
       return runAiVisibilityCheck({
         data: {
           projectId,
-          maxCostUsd: cost.costUsd,
+          maxCostUsd: cost.runNowCostUsd,
           promptIds,
         },
       });
@@ -128,7 +174,9 @@ export function TrackingCostReview({
           <Button
             disabled={
               !cost ||
-              estimate.isPlaceholderData ||
+              // Approve only the current price, not the preloaded one
+              // still being refreshed.
+              estimate.isFetching ||
               start.isPending ||
               cost.observations === 0
             }
@@ -175,10 +223,11 @@ export function TrackingCostReview({
                 {mode === "schedule" ? "Cost per run" : "Cost"}
               </FieldLabel>
               <span className="text-2xl font-semibold tabular-nums">
-                {aiMoney(cost.costUsd)}
+                {aiMoney(runCostUsd)}
               </span>
               <FieldDescription>
-                {`${cost.observations} ${cost.observations === 1 ? "answer" : "answers"} × ${aiMoney(cost.observations ? cost.costUsd / cost.observations : 0)}${mode === "schedule" ? ` · about ${aiMoney(cost.monthlyCostUsd)} a month (${cost.checksPerMonth} ${cost.checksPerMonth === 1 ? "run" : "runs"})` : ""}`}
+                {/* No per-answer price: engines cost different amounts. */}
+                {`${cost.observations} ${cost.observations === 1 ? "answer" : "answers"}${mode === "schedule" ? ` · about ${aiMoney(cost.monthlyCostUsd)} a month (${cost.checksPerMonth} ${cost.checksPerMonth === 1 ? "run" : "runs"})` : " · live answers, ready in a few minutes"}`}
               </FieldDescription>
             </Field>
             {start.error && <AiQueryError error={start.error} />}

@@ -5,6 +5,8 @@ export const aiEngineSchema = z.enum([
   "chatgpt",
   "gemini",
   "google_ai_overview",
+  "claude",
+  "perplexity",
 ]);
 export const aiProjectSchema = z.object({ projectId: z.string().uuid() });
 const topicSchema = z.string().trim().min(1).max(100);
@@ -56,7 +58,7 @@ export const aiTrackerPatchSchema = z.object({
         topic: topicSchema
           .optional()
           .describe(
-            "Topic name that groups the prompt. New prompts default to General; edits keep the saved topic.",
+            "Topic name that groups the prompt. New prompts default to General; edits without a topic keep the saved topic. Set it on an existing prompt to move the prompt; to rename a topic, move every prompt in it.",
           ),
         paused: z.boolean().optional(),
       }),
@@ -98,7 +100,7 @@ export const runAiCheckSchema = aiProjectSchema.extend({
     .positive()
     .max(100)
     .describe(
-      "The most the user approved for this one check, from estimate_ai_visibility_cost. The check is refused if its current cost is higher.",
+      "The most the user approved for this one check: runNowCostUsd from estimate_ai_visibility_cost. The check is refused if its current cost is higher.",
     ),
   promptIds: z.array(z.string().uuid()).min(1).max(100).optional(),
 });

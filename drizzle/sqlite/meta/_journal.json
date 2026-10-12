@@ -372,6 +372,20 @@
       "when": 1791317073141,
       "tag": "0052_ai_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1791339857061,
+      "tag": "0053_chubby_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1791402062971,
+      "tag": "0054_crazy_blindfold",
+      "breakpoints": true
     }
   ]
 }

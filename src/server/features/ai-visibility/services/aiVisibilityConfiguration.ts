@@ -5,6 +5,7 @@ import {
   type AiBrand,
   type AiEngine,
 } from "@/shared/ai-visibility";
+import { computeNextCheckAt } from "@/shared/rank-tracking";
 import { applyMarket } from "./aiVisibilityMarket";
 import type {
   ConfigurationRows,
@@ -21,6 +22,8 @@ export function trackerEngines(tracker: TrackerRow): AiEngine[] {
     ...(tracker.chatgpt ? (["chatgpt"] as const) : []),
     ...(tracker.gemini ? (["gemini"] as const) : []),
     ...(tracker.googleAiOverview ? (["google_ai_overview"] as const) : []),
+    ...(tracker.claude ? (["claude"] as const) : []),
+    ...(tracker.perplexity ? (["perplexity"] as const) : []),
   ];
 }
 
@@ -29,6 +32,8 @@ function engineColumns(engines: AiEngine[]) {
     chatgpt: engines.includes("chatgpt"),
     gemini: engines.includes("gemini"),
     googleAiOverview: engines.includes("google_ai_overview"),
+    claude: engines.includes("claude"),
+    perplexity: engines.includes("perplexity"),
   };
 }
 
@@ -79,6 +84,18 @@ export function aiBrands(
   return [...brands.values()];
 }
 
+/**
+ * A new tracker's first check, at least a full week out. The shared weekly
+ * slot is seven calendar days ahead at 04:00–10:00 UTC, which lands short of
+ * a week for trackers created later in the UTC day.
+ */
+function firstWeeklyCheckAt() {
+  const next = new Date(computeNextCheckAt("weekly"));
+  if (next.getTime() < Date.now() + 7 * 86_400_000)
+    next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString();
+}
+
 export function projectAiConfiguration(input: {
   previous: ConfigurationRows | null;
   projectId: string;
@@ -98,11 +115,13 @@ export function projectAiConfiguration(input: {
         tracker: {
           id: crypto.randomUUID(),
           projectId: input.projectId,
-          enabled: false,
+          // New tracking runs weekly. The first check is a week out, so
+          // creating a tracker never charges on its own.
+          enabled: true,
           ...engineColumns(["chatgpt", "gemini"]),
           ...input.projectMarket,
           scheduleInterval: "weekly",
-          nextCheckAt: null,
+          nextCheckAt: firstWeeklyCheckAt(),
           lastSkipReason: null,
           createdAt: now,
         },

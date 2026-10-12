@@ -24,10 +24,12 @@ export function CompetitorsTab({
   projectId,
   state,
   runId,
+  collecting,
 }: {
   projectId: string;
   state: AiTrackerState;
   runId: string | undefined;
+  collecting: boolean;
 }) {
   const [selectedEngines, setSelectedEngines] = useState<AiEngine[] | null>(
     null,
@@ -81,7 +83,9 @@ export function CompetitorsTab({
         <AiQueryError error={query.error} />
       ) : runId && !rows.length ? (
         <p className="p-10 text-center text-sm text-muted-foreground">
-          No answers match these filters.
+          {collecting
+            ? "Collecting answers. Brands appear here as answers arrive."
+            : "No answers match these filters."}
         </p>
       ) : (
         <Table>

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { aiObservations, aiRuns } from "@/db/schema";
 import { AiVisibilityRepository as repo } from "../repositories/AiVisibilityRepository";
 import { runCheck } from "./aiVisibilityRuns";
+import { getTracker } from "./aiVisibilityState";
 import { configuration, customer } from "./aiVisibilityTestFixtures";
 
 const { testDb, workflow } = await vi.hoisted(async () => {
@@ -70,6 +71,29 @@ describe("AI visibility checks", () => {
         .from(aiObservations)
         .where(eq(aiObservations.runId, stuck.id)),
     ).toEqual([{ status: "failed" }]);
+  });
+
+  it("marks only prompts with collected answer text as having results", async () => {
+    const run = await runCheck({ projectId, maxCostUsd: 1 }, customer);
+    const answers = await repo.getObservations([run.id]);
+    for (const answer of answers)
+      await testDb.db
+        .update(aiObservations)
+        .set({
+          status: "completed",
+          // A completed collection without text means no answer was shown.
+          answerMarkdown:
+            answer.prompt === "Is OpenSEO good?" ? "OpenSEO is good." : null,
+        })
+        .where(eq(aiObservations.id, answer.id));
+
+    const { prompts } = await getTracker({ projectId });
+
+    expect(
+      Object.fromEntries(
+        prompts.map((prompt) => [prompt.text, prompt.hasResults]),
+      ),
+    ).toEqual({ "Is OpenSEO good?": true, "Which SEO tools?": false });
   });
 
   it("refuses a check that now costs more than the approved maximum", async () => {

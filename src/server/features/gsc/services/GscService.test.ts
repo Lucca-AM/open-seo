@@ -254,6 +254,12 @@ describe("GscService.listSitesForUserWithGrantStatus", () => {
 describe("GscService.getPerformance", () => {
   beforeEach(() => {
     mocks.querySearchAnalytics.mockResolvedValue([]);
+    mocks.getByProjectId.mockResolvedValue({
+      connectedByUserId: "u1",
+      connectedAccountEmail: null,
+      gscAccountId: "sub-a",
+      siteUrl: "https://x/",
+    });
   });
 
   it.each([
@@ -281,4 +287,13 @@ describe("GscService.getPerformance", () => {
       });
     },
   );
+  it("uses the API's full query page for internal dashboard requests", async () => {
+    const result = await GscService.getPerformance({
+      projectId: "p1",
+      startDate: "2026-01-01",
+      endDate: "2026-01-31",
+      rowLimit: 25000,
+    });
+    expect(result.request.rowLimit).toBe(25000);
+  });
 });

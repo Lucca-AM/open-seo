@@ -5,6 +5,8 @@ import { AiVisibilityWorkflow } from "./AiVisibilityWorkflow";
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   post: vi.fn(),
+  live: vi.fn(),
+  model: vi.fn(),
   collect: vi.fn(),
   finalize: vi.fn(),
   markFailed: vi.fn(),
@@ -20,6 +22,8 @@ vi.mock(
   () => ({
     prepareAiRun: mocks.prepare,
     postAiBatch: mocks.post,
+    collectAiLiveBatch: mocks.live,
+    collectAiModelBatch: mocks.model,
     collectAiRound: mocks.collect,
     finalizeAiRun: mocks.finalize,
     markAiRunFailed: mocks.markFailed,
@@ -61,6 +65,8 @@ function execute() {
 beforeEach(() => {
   mocks.prepare.mockResolvedValue({
     market: { locationCode: 2840, languageCode: "en" },
+    modelBatches: [],
+    live: false,
     batches: [
       { engine: "chatgpt", tasks: [] },
       { engine: "gemini", tasks: [] },
@@ -83,6 +89,37 @@ describe("AI visibility workflow", () => {
     expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith("run");
   });
 
+  it("asks the model API for Claude and Perplexity, then reads queued answers before sleeping", async () => {
+    mocks.prepare.mockResolvedValue({
+      market: { locationCode: 2840, languageCode: "en" },
+      modelBatches: [{ engine: "claude", tasks: [] }],
+      live: false,
+      batches: [{ engine: "chatgpt", tasks: [] }],
+    });
+    await execute();
+    expect(mocks.model).toHaveBeenCalledOnce();
+    expect(mocks.steps).toHaveBeenCalledWith("collect-model-0", {
+      retries: { limit: 2, delay: "10 seconds" },
+      timeout: "5 minutes",
+    });
+    expect(mocks.sleep).not.toHaveBeenCalled();
+    expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith("run");
+  });
+
+  it("collects a manual run's live batches without posting or polling", async () => {
+    mocks.prepare.mockResolvedValue({
+      market: { locationCode: 2840, languageCode: "en" },
+      modelBatches: [],
+      live: true,
+      batches: [[]],
+    });
+    await execute();
+    expect(mocks.live).toHaveBeenCalledOnce();
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.sleep).not.toHaveBeenCalled();
+    expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith("run");
+  });
+
   it("stops polling when the collection window closes and finalizes what arrived", async () => {
     mocks.collect.mockResolvedValue([task]);
     await execute();
@@ -95,6 +132,15 @@ describe("AI visibility workflow", () => {
     mocks.prepare.mockRejectedValue(error);
     await expect(execute()).rejects.toThrow(error);
     expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.markFailed).toHaveBeenCalledExactlyOnceWith("run", error);
+  });
+
+  it("does not log a rejected poll sleep as a failure, but still marks the run failed", async () => {
+    const error = new Error();
+    mocks.sleep.mockRejectedValueOnce(error);
+    const consoleError = vi.spyOn(console, "error");
+    await expect(execute()).rejects.toThrow(error);
+    expect(consoleError).not.toHaveBeenCalled();
     expect(mocks.markFailed).toHaveBeenCalledExactlyOnceWith("run", error);
   });
 });

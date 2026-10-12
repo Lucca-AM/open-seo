@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Search, Telescope } from "lucide-react";
+import { ChevronRight, Telescope } from "lucide-react";
 import { EmptyState } from "@/client/components/EmptyState";
-import { PageHeader } from "@/client/components/PageHeader";
+import { BackLink, PageHeader } from "@/client/components/PageHeader";
+import { SearchCard, SearchInput } from "@/client/components/SearchCard";
 import {
   SkeletonPageContent,
   SkeletonTableRows,
 } from "@/client/components/SkeletonPresets";
 import { Button } from "@/client/components/ui/button";
-import { Input } from "@/client/components/ui/input";
 import {
   Table,
   TableBody,
@@ -18,11 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/client/components/ui/table";
-import { listAiResearchKeywords } from "@/serverFunctions/ai-visibility";
 import { PromptResearchKeyword } from "./PromptResearchKeyword";
 import {
   AiQueryError,
-  aiVisibilityKey,
+  aiResearchKeywordsQueryOptions,
   useAiVisibilityTracker,
 } from "./shared";
 
@@ -45,10 +44,23 @@ export function PromptResearchPage({
         }}
       />
     );
-  if (!state?.configured)
-    return (
-      <div className="space-y-5 pt-1">
-        <PageHeader title="Prompt Research" />
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="Prompt Research"
+        description="Find the questions people ask AI about your market, and the sites the answers cite."
+        backLink={
+          keyword && state?.configured ? (
+            <BackLink
+              to="/p/$projectId/ai-visibility/research"
+              params={{ projectId }}
+            >
+              Relevant keywords
+            </BackLink>
+          ) : undefined
+        }
+      />
+      {!state?.configured ? (
         <EmptyState
           icon={Telescope}
           title="Prompt research starts with a tracker"
@@ -65,138 +77,154 @@ export function PromptResearchPage({
             </Button>
           }
         />
-      </div>
-    );
-  return keyword ? (
-    <PromptResearchKeyword
-      key={keyword}
-      projectId={projectId}
-      state={state}
-      keyword={keyword}
-    />
-  ) : (
-    <KeywordList projectId={projectId} />
+      ) : (
+        <>
+          {/* A new keyword resets the draft. The prefix keeps this key apart
+              from its keyword-view sibling's. */}
+          <KeywordSearch
+            key={`search:${keyword ?? ""}`}
+            projectId={projectId}
+            keyword={keyword}
+          />
+          {keyword ? (
+            <PromptResearchKeyword
+              key={keyword}
+              projectId={projectId}
+              state={state}
+              keyword={keyword}
+            />
+          ) : (
+            <KeywordList projectId={projectId} />
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
 function KeywordList({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
-  const query = useQuery({
-    queryKey: [...aiVisibilityKey(projectId), "researchKeywords"],
-    queryFn: () => listAiResearchKeywords({ data: { projectId } }),
-  });
+  const query = useQuery(aiResearchKeywordsQueryOptions(projectId));
   return (
-    <div className="space-y-5 pt-1">
-      <div className="flex flex-col items-center gap-4 rounded-lg border bg-card px-4 py-10 text-center border-border">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Explore questions about your market
-        </h1>
-        <KeywordSearch projectId={projectId} />
+    <div className="overflow-hidden rounded-lg border bg-card border-border">
+      <div className="border-b p-4 border-border">
+        <h2 className="font-medium">Relevant keywords</h2>
+        <p className="text-sm text-muted-foreground">
+          Select a keyword to see the prompts people ask AI about it.
+        </p>
       </div>
-      <div className="overflow-hidden rounded-lg border bg-card border-border">
-        <div className="border-b p-4 border-border">
-          <h2 className="font-medium">Relevant keywords</h2>
-          <p className="text-sm text-muted-foreground">
-            Select a keyword to see the prompts people ask AI about it.
-          </p>
-        </div>
-        {query.isPending ? (
-          <SkeletonTableRows rows={5} columns={1} className="p-4" />
-        ) : query.isError ? (
-          <AiQueryError
-            error={query.error}
-            retry={() => {
-              void query.refetch();
-            }}
-          />
-        ) : !query.data.keywords.length ? (
-          <p className="p-10 text-center text-sm text-muted-foreground">
-            Add topics to your tracker, or search a keyword above.
-          </p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Keyword</TableHead>
-                <TableHead className="w-10">
-                  <span className="sr-only">Open</span>
-                </TableHead>
+      {query.isPending ? (
+        <SkeletonTableRows rows={5} columns={1} className="p-4" />
+      ) : query.isError ? (
+        <AiQueryError
+          error={query.error}
+          retry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : !query.data.keywords.length ? (
+        <p className="p-10 text-center text-sm text-muted-foreground">
+          Add topics to your tracker, or search a keyword above.
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Keyword</TableHead>
+              <TableHead className="w-10">
+                <span className="sr-only">Open</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {query.data.keywords.map((keyword) => (
+              // Any cell opens the keyword; the link keeps it keyboard reachable.
+              <TableRow
+                key={keyword}
+                className="cursor-pointer"
+                onClick={() =>
+                  void navigate({
+                    to: "/p/$projectId/ai-visibility/research",
+                    params: { projectId },
+                    search: { q: keyword },
+                  })
+                }
+              >
+                <TableCell>
+                  <Link
+                    to="/p/$projectId/ai-visibility/research"
+                    params={{ projectId }}
+                    search={{ q: keyword }}
+                    className="font-medium hover:underline"
+                    // The row navigates too; this keeps new-tab clicks to one tab.
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {keyword}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {query.data.keywords.map((keyword) => (
-                // Any cell opens the keyword; the link keeps it keyboard reachable.
-                <TableRow
-                  key={keyword}
-                  className="cursor-pointer"
-                  onClick={() =>
-                    void navigate({
-                      to: "/p/$projectId/ai-visibility/research",
-                      params: { projectId },
-                      search: { q: keyword },
-                    })
-                  }
-                >
-                  <TableCell>
-                    <Link
-                      to="/p/$projectId/ai-visibility/research"
-                      params={{ projectId }}
-                      search={{ q: keyword }}
-                      className="font-medium hover:underline"
-                      // The row navigates too; this keeps new-tab clicks to one tab.
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      {keyword}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <ChevronRight className="size-4 text-muted-foreground" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }
 
-function KeywordSearch({ projectId }: { projectId: string }) {
+function KeywordSearch({
+  projectId,
+  keyword,
+}: {
+  projectId: string;
+  keyword: string | undefined;
+}) {
   const navigate = useNavigate();
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(keyword ?? "");
+  const [error, setError] = useState<string | null>(null);
   return (
-    <form
-      className="w-full max-w-xl text-left"
+    <SearchCard
       onSubmit={(event) => {
         event.preventDefault();
-        if (!draft.trim()) return;
+        if (!draft.trim()) {
+          setError("Enter a keyword.");
+          return;
+        }
         void navigate({
           to: "/p/$projectId/ai-visibility/research",
           params: { projectId },
           search: { q: draft.trim() },
         });
       }}
+      error={error}
+      errorId="ai-keyword-research-error"
+      secondRow={
+        <p
+          id="ai-keyword-research-cost"
+          className="text-xs text-muted-foreground"
+        >
+          About $0.25 in credits per keyword.
+        </p>
+      }
     >
-      <div className="flex gap-2">
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Enter a keyword"
-          aria-label="Keyword"
-          aria-describedby="ai-keyword-research-cost"
-          maxLength={100}
-        />
-        <Button type="submit" disabled={!draft.trim()}>
-          <Search /> Analyze
-        </Button>
-      </div>
-      <p
-        id="ai-keyword-research-cost"
-        className="mt-2 text-xs text-muted-foreground"
-      >
-        About $0.25 in credits per keyword.
-      </p>
-    </form>
+      <SearchInput
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        placeholder="Enter a keyword"
+        aria-label="Keyword"
+        aria-invalid={error ? true : undefined}
+        aria-describedby={
+          error
+            ? "ai-keyword-research-error ai-keyword-research-cost"
+            : "ai-keyword-research-cost"
+        }
+        maxLength={100}
+      />
+    </SearchCard>
   );
 }

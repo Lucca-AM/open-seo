@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AiTrackerPatch } from "@/types/schemas/ai-visibility";
 import type { ConfigurationRows } from "../repositories/AiVisibilityRepository";
 import { aiScope, projectAiConfiguration } from "./aiVisibilityConfiguration";
@@ -24,10 +24,15 @@ const saved = () =>
   }).rows;
 
 describe("AI configuration projection", () => {
-  it("creates a paused tracker in the project market with two consumer engines and General prompts", () => {
+  it("creates a weekly tracker, first check at least a week out, in the project market with two consumer engines and General prompts", () => {
+    // Late in the UTC day, past the scheduler's 04:00–10:00 UTC slots.
+    vi.useFakeTimers({ now: new Date("2026-09-05T23:00:00.000Z") });
     const rows = saved();
+    vi.useRealTimers();
+    expect(rows.tracker.nextCheckAt).toMatch(/^2026-09-13T0/);
     expect(rows.tracker).toMatchObject({
-      enabled: false,
+      enabled: true,
+      scheduleInterval: "weekly",
       locationCode: 2100,
       languageCode: "bg",
       chatgpt: true,

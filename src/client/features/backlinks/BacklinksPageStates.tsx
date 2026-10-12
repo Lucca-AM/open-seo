@@ -10,13 +10,8 @@ export function BacklinksLoadingState() {
         <Skeleton className="h-3 w-80" />
       </div>
       <div className="grid grid-cols-1 gap-3 px-4 pb-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-lg border border-border p-3 md:col-span-2 xl:col-span-1">
-          {Array.from({ length: 8 }, (_, index) => (
-            <div key={index} className="space-y-2">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-7 w-16" />
-            </div>
-          ))}
+        <div className="rounded-lg border border-border p-3 md:col-span-2 xl:col-span-1">
+          <SkeletonTableRows rows={9} columns={2} />
         </div>
         {Array.from({ length: 2 }, (_, index) => (
           <div

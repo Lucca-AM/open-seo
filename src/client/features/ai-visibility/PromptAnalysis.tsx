@@ -1,9 +1,21 @@
 import { useState } from "react";
 import { sort } from "remeda";
 import { Button } from "@/client/components/ui/button";
-import type { AiPrompt } from "@/shared/ai-visibility";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/client/components/ui/select";
+import {
+  aiObservationStatusLabel,
+  type AiPrompt,
+} from "@/shared/ai-visibility";
 import { summarizeAiBrands } from "@/shared/ai-visibility-results";
 import type { getAiVisibilityResults } from "@/serverFunctions/ai-visibility";
+import { aiEngineSchema } from "@/types/schemas/ai-visibility";
+import { EngineLabel } from "./EngineLabel";
 import { PromptAnswers } from "./PromptAnswers";
 import {
   PromptDateRange,
@@ -11,8 +23,12 @@ import {
   inPromptPeriod,
   promptPeriod,
 } from "./PromptDateRange";
-import { PromptExecutions } from "./PromptExecutions";
+import { PromptExecutions, type PromptExecution } from "./PromptExecutions";
 import { PromptSummary } from "./PromptSummary";
+import { aiDate } from "./shared";
+
+const answered = ({ observation }: PromptExecution) =>
+  observation.status === "completed" && observation.answerStatus === "answered";
 
 export function PromptAnalysis({
   projectId,
@@ -43,11 +59,7 @@ export function PromptAnalysis({
   );
   const selected =
     executions.find(({ observation }) => observation.id === selectedId) ??
-    executions.find(
-      ({ observation }) =>
-        observation.status === "completed" &&
-        observation.answerStatus === "answered",
-    ) ??
+    executions.find(answered) ??
     executions[0];
   const summaries = summarizeAiBrands(
     executions.map(({ observation }) => observation),
@@ -58,18 +70,22 @@ export function PromptAnalysis({
       <PromptSummary summaries={summaries} />
       {selected ? (
         <>
-          <PromptExecutions
-            executions={executions}
-            selectedId={selected.observation.id}
-            onSelect={setSelectedId}
-          />
           <PromptAnswers
             projectId={projectId}
             prompt={prompt}
             observation={selected.observation}
-            executionDate={
-              selected.observation.collectedAt ?? selected.run.createdAt
+            controls={
+              <ExecutionSelects
+                executions={executions}
+                selected={selected}
+                onSelect={setSelectedId}
+              />
             }
+          />
+          <PromptExecutions
+            executions={executions}
+            selectedId={selected.observation.id}
+            onSelect={setSelectedId}
           />
         </>
       ) : (
@@ -101,6 +117,82 @@ export function PromptAnalysis({
           included in this period’s metrics.
         </p>
       )}
+    </div>
+  );
+}
+
+/** Pick an answer by AI provider, then by when it was collected. */
+function ExecutionSelects({
+  executions,
+  selected,
+  onSelect,
+}: {
+  executions: PromptExecution[];
+  selected: PromptExecution;
+  onSelect: (id: string) => void;
+}) {
+  const engine = selected.observation.engine;
+  const engineItems = aiEngineSchema.options
+    .filter((value) =>
+      executions.some(({ observation }) => observation.engine === value),
+    )
+    .map((value) => ({ value, label: <EngineLabel engine={value} /> }));
+  const dateItems = executions
+    .filter(({ observation }) => observation.engine === engine)
+    .map(({ observation, run }) => ({
+      value: observation.id,
+      label: `${aiDate(observation.collectedAt ?? run.createdAt)}${
+        observation.status === "completed"
+          ? ""
+          : ` · ${aiObservationStatusLabel(observation.status)}`
+      }`,
+    }));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select
+        items={engineItems}
+        value={engine}
+        onValueChange={(next) => {
+          // Keep the same run when that provider answered it.
+          const forEngine = executions.filter(
+            ({ observation }) => observation.engine === next,
+          );
+          const match =
+            forEngine.find(({ run }) => run.id === selected.run.id) ??
+            forEngine.find(answered) ??
+            forEngine[0];
+          if (match) onSelect(match.observation.id);
+        }}
+      >
+        <SelectTrigger size="sm" aria-label="AI provider">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {engineItems.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        items={dateItems}
+        value={selected.observation.id}
+        onValueChange={(id) => {
+          if (id) onSelect(id);
+        }}
+      >
+        <SelectTrigger size="sm" aria-label="Answer date">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {dateItems.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

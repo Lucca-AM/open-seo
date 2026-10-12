@@ -82,7 +82,7 @@ describe("rendered audit start", () => {
     const error = await AuditService.startAudit(renderedAudit).catch(
       (reason: unknown) => reason,
     );
-    expect(error).toMatchObject({ code: "FORBIDDEN" });
+    expect(error).toMatchObject({ code: "AUDIT_RENDERING_UNAVAILABLE" });
     // MCP clients see this message as the tool's answer.
     expect(String(error)).toContain("CONTEXT_API_KEY");
     expect(mocks.lock).not.toHaveBeenCalled();

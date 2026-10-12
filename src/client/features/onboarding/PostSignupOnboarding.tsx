@@ -8,11 +8,13 @@ import {
   INTEREST_OPTIONS,
   ONBOARDING_LAST_STEP,
   ONBOARDING_OPTION_LABELS,
+  ONBOARDING_STEPS,
   type OnboardingAnswers,
   SOURCE_OPTIONS,
   WORK_FOR_OPTIONS,
 } from "@/client/features/onboarding/onboardingModel";
 import { AgentSetup } from "@/client/features/ai-mcp/AgentSetup";
+import { WebsiteOnboardingStep } from "@/client/features/onboarding/WebsiteOnboardingStep";
 import { SearchConsoleOnboardingStep } from "@/client/features/onboarding/SearchConsoleOnboardingStep";
 import { WizardFooter } from "@/client/features/onboarding/WizardFooter";
 import { Input } from "@/client/components/ui/input";
@@ -41,14 +43,14 @@ export function PostSignupOnboarding({
   isSaving,
   accountMenu,
 }: PostSignupOnboardingProps) {
+  const stepName = ONBOARDING_STEPS[step];
+  const isLastStep = step === ONBOARDING_LAST_STEP;
   const canContinue =
-    step === 0
+    stepName === "interests"
       ? answers.selectedInterests.length > 0
-      : step === 1
+      : stepName === "work_for"
         ? Boolean(answers.workFor)
-        : step === 2
-          ? Boolean(answers.source)
-          : true;
+        : Boolean(answers.source);
 
   const updateAnswers = (patch: Partial<OnboardingAnswers>) =>
     onAnswersChange({ ...answers, ...patch });
@@ -58,7 +60,17 @@ export function PostSignupOnboarding({
       {accountMenu}
       <OnboardingCard step={step + 1} total={ONBOARDING_LAST_STEP + 1}>
         <fieldset disabled={isSaving} className="min-w-0">
-          {step === 0 ? (
+          {stepName === "website" ? (
+            <WebsiteOnboardingStep onNext={onNext} onSkip={onSkip} />
+          ) : stepName === "search_console" ? (
+            <SearchConsoleOnboardingStep
+              onNext={onNext}
+              onBack={onBack}
+              onSkip={onSkip}
+            />
+          ) : stepName === "agent_setup" ? (
+            <AgentSetup onNext={onNext} onBack={onBack} disabled={isSaving} />
+          ) : stepName === "interests" ? (
             <OnboardingChoiceGroup
               title="What brings you here?"
               description="Pick up to three things you want to work on."
@@ -78,7 +90,7 @@ export function PostSignupOnboarding({
               }
               multiple
             />
-          ) : step === 1 ? (
+          ) : stepName === "work_for" ? (
             <OnboardingChoiceGroup
               title="Who are you doing SEO for?"
               options={[...WORK_FOR_OPTIONS]}
@@ -95,7 +107,7 @@ export function PostSignupOnboarding({
                 />
               }
             />
-          ) : step === 2 ? (
+          ) : (
             <OnboardingChoiceGroup
               title="How did you find OpenSEO?"
               options={[...SOURCE_OPTIONS]}
@@ -104,25 +116,14 @@ export function PostSignupOnboarding({
               otherValue={answers.sourceOther}
               onOtherChange={(sourceOther) => updateAnswers({ sourceOther })}
             />
-          ) : step === 3 ? (
-            <SearchConsoleOnboardingStep
-              onNext={onNext}
-              onBack={onBack}
-              onSkip={onSkip}
-            />
-          ) : (
-            <AgentSetup
-              onComplete={onFinish}
-              onBack={onBack}
-              disabled={isSaving}
-            />
           )}
 
-          {step < 3 && (
+          {step > ONBOARDING_STEPS.indexOf("agent_setup") && (
             <WizardFooter
-              onBack={step > 0 ? onBack : undefined}
-              onSkip={onSkip}
-              onContinue={onNext}
+              onBack={onBack}
+              onSkip={isLastStep ? onFinish : onSkip}
+              onContinue={isLastStep ? onFinish : onNext}
+              continueLabel={isLastStep ? "Finish" : "Continue"}
               continueDisabled={!canContinue || isSaving}
             />
           )}

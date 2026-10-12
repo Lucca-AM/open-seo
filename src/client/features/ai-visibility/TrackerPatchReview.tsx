@@ -1,5 +1,5 @@
-import { useId, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useId, useState, type ReactNode } from "react";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, X } from "lucide-react";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -10,13 +10,6 @@ import {
   DialogTitle,
 } from "@/client/components/ui/dialog";
 import { Field, FieldLabel } from "@/client/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/client/components/ui/select";
 import { Textarea } from "@/client/components/ui/textarea";
 import {
   estimateAiVisibilityCost,
@@ -24,20 +17,25 @@ import {
 } from "@/serverFunctions/ai-visibility";
 import type { AiTrackerPatch } from "@/types/schemas/ai-visibility";
 import type { AiPrompt, AiTrackerState } from "@/shared/ai-visibility";
-import { AiLoading, AiQueryError, aiMoney, aiVisibilityKey } from "./shared";
+import { TopicField } from "./TopicField";
+import { AiLoading, AiQueryError, aiVisibilityKey } from "./shared";
 
 export function TrackerPatchReview({
   projectId,
   state,
   patch,
-  description,
+  children,
+  canSave = true,
   onClose,
   onSaved,
 }: {
   projectId: string;
   state: AiTrackerState;
   patch: AiTrackerPatch;
-  description: string;
+  /** Fields that edit the patch, such as its topic. */
+  children?: ReactNode;
+  /** False while those fields are incomplete. */
+  canSave?: boolean;
   onClose: () => void;
   onSaved: (state: AiTrackerState) => void;
 }) {
@@ -49,6 +47,10 @@ export function TrackerPatchReview({
     gcTime: 0,
     refetchOnWindowFocus: false,
     retry: false,
+    // The estimate checks the change before Save, for example the topic
+    // limit. Editing the patch in place keeps the last result instead of a
+    // spinner, and Save waits for the new one.
+    placeholderData: keepPreviousData,
   });
   const save = useMutation({
     mutationFn: () =>
@@ -76,7 +78,7 @@ export function TrackerPatchReview({
             <X />
           </Button>
         </DialogHeader>
-        <p className="text-sm">{description}</p>
+        {children}
         {patch.prompts?.map((prompt) => (
           <p
             key={prompt.id ?? prompt.text}
@@ -97,23 +99,6 @@ export function TrackerPatchReview({
           />
         ) : (
           <>
-            {estimate.data ? (
-              <div className="space-y-1 text-sm text-muted-foreground">
-                <p>
-                  Each run collects {estimate.data.observations} answers for{" "}
-                  {aiMoney(estimate.data.costUsd)}
-                </p>
-                <p>
-                  {aiMoney(estimate.data.monthlyCostUsd)} estimated per month on
-                  the {estimate.data.scheduleInterval} schedule.
-                </p>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tracking is paused. Saving this change does not start a paid
-                run.
-              </p>
-            )}
             {save.error && <AiQueryError error={save.error} />}
             <DialogFooter>
               <Button
@@ -123,7 +108,12 @@ export function TrackerPatchReview({
               >
                 Cancel
               </Button>
-              <Button disabled={save.isPending} onClick={() => save.mutate()}>
+              <Button
+                disabled={
+                  save.isPending || !canSave || estimate.isPlaceholderData
+                }
+                onClick={() => save.mutate()}
+              >
                 {save.isPending && <Loader2 className="size-4 animate-spin" />}
                 Save change
               </Button>
@@ -138,19 +128,26 @@ export function TrackerPatchReview({
 export function PromptEditor({
   prompt,
   state,
+  pending,
   onClose,
   onReview,
+  onMove,
 }: {
   prompt: AiPrompt;
   state: AiTrackerState;
+  /** A move is saving. */
+  pending: boolean;
   onClose: () => void;
+  /** New wording adds a prompt, so its cost needs a review. */
   onReview: (patch: AiTrackerPatch) => void;
+  /** A topic change keeps the prompt and its answers, so it saves directly. */
+  onMove: (patch: AiTrackerPatch) => void;
 }) {
   const [text, setText] = useState(prompt.text);
   const [topic, setTopic] = useState(prompt.topic);
   const textId = useId();
-  const topicId = useId();
-  const topicItems = state.topics.map((name) => ({ value: name, label: name }));
+  // The server compares trimmed wording, so whitespace alone is no rewording.
+  const reworded = text.trim() !== prompt.text;
   return (
     <Dialog
       open
@@ -170,10 +167,6 @@ export function PromptEditor({
             <X />
           </Button>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground">
-          Changing the wording archives this prompt and adds the new wording as
-          a new prompt. Earlier answers keep the prompt they were collected for.
-        </p>
         <Field>
           <FieldLabel htmlFor={textId}>Exact prompt</FieldLabel>
           <Textarea
@@ -185,40 +178,26 @@ export function PromptEditor({
             data-ph-mask
           />
         </Field>
-        <Field>
-          <FieldLabel htmlFor={topicId}>Topic</FieldLabel>
-          <Select
-            items={topicItems}
-            value={topic}
-            onValueChange={(name) => {
-              if (name) setTopic(name);
-            }}
-          >
-            <SelectTrigger id={topicId} className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {topicItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+        <TopicField topics={state.topics} value={topic} onChange={setTopic} />
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
             disabled={
-              !text.trim() || (text === prompt.text && topic === prompt.topic)
+              pending ||
+              !text.trim() ||
+              !topic.trim() ||
+              (!reworded && topic === prompt.topic)
             }
-            onClick={() =>
-              onReview({ prompts: [{ id: prompt.id, text, topic }] })
-            }
+            onClick={() => {
+              const patch = { prompts: [{ id: prompt.id, text, topic }] };
+              if (reworded) onReview(patch);
+              else onMove(patch);
+            }}
           >
-            Review change
+            {pending && <Loader2 className="size-4 animate-spin" />}
+            {reworded ? "Review change" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

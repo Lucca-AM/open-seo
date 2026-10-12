@@ -21,6 +21,7 @@ import { Route as MarketingDomainAgeCheckerRouteImport } from './routes/_marketi
 import { Route as MarketingGoogleSearchConsoleMcpRouteImport } from './routes/_marketing/google-search-console-mcp'
 import { Route as MarketingKeywordGeneratorRouteImport } from './routes/_marketing/keyword-generator'
 import { Route as MarketingOpenSourceSeoRouteImport } from './routes/_marketing/open-source-seo'
+import { Route as MarketingOpenseoVsDataforseoRouteImport } from './routes/_marketing/openseo-vs-dataforseo'
 import { Route as MarketingPricingRouteImport } from './routes/_marketing/pricing'
 import { Route as MarketingPrivacyRouteImport } from './routes/_marketing/privacy'
 import { Route as MarketingRoadmapRouteImport } from './routes/_marketing/roadmap'
@@ -160,6 +161,12 @@ const MarketingOpenSourceSeoRoute = MarketingOpenSourceSeoRouteImport.update({
   path: '/open-source-seo',
   getParentRoute: () => MarketingRoute,
 } as any)
+const MarketingOpenseoVsDataforseoRoute =
+  MarketingOpenseoVsDataforseoRouteImport.update({
+    id: '/openseo-vs-dataforseo',
+    path: '/openseo-vs-dataforseo',
+    getParentRoute: () => MarketingRoute,
+  } as any)
 const MarketingPricingRoute = MarketingPricingRouteImport.update({
   id: '/pricing',
   path: '/pricing',
@@ -584,6 +591,7 @@ export interface FileRoutesByFullPath {
   '/google-search-console-mcp': typeof MarketingGoogleSearchConsoleMcpRoute
   '/keyword-generator': typeof MarketingKeywordGeneratorRoute
   '/open-source-seo': typeof MarketingOpenSourceSeoRoute
+  '/openseo-vs-dataforseo': typeof MarketingOpenseoVsDataforseoRoute
   '/pricing': typeof MarketingPricingRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/roadmap': typeof MarketingRoadmapRoute
@@ -668,6 +676,7 @@ export interface FileRoutesByTo {
   '/google-search-console-mcp': typeof MarketingGoogleSearchConsoleMcpRoute
   '/keyword-generator': typeof MarketingKeywordGeneratorRoute
   '/open-source-seo': typeof MarketingOpenSourceSeoRoute
+  '/openseo-vs-dataforseo': typeof MarketingOpenseoVsDataforseoRoute
   '/pricing': typeof MarketingPricingRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/roadmap': typeof MarketingRoadmapRoute
@@ -755,6 +764,7 @@ export interface FileRoutesById {
   '/_marketing/google-search-console-mcp': typeof MarketingGoogleSearchConsoleMcpRoute
   '/_marketing/keyword-generator': typeof MarketingKeywordGeneratorRoute
   '/_marketing/open-source-seo': typeof MarketingOpenSourceSeoRoute
+  '/_marketing/openseo-vs-dataforseo': typeof MarketingOpenseoVsDataforseoRoute
   '/_marketing/pricing': typeof MarketingPricingRoute
   '/_marketing/privacy': typeof MarketingPrivacyRoute
   '/_marketing/roadmap': typeof MarketingRoadmapRoute
@@ -843,6 +853,7 @@ export interface FileRouteTypes {
     | '/google-search-console-mcp'
     | '/keyword-generator'
     | '/open-source-seo'
+    | '/openseo-vs-dataforseo'
     | '/pricing'
     | '/privacy'
     | '/roadmap'
@@ -927,6 +938,7 @@ export interface FileRouteTypes {
     | '/google-search-console-mcp'
     | '/keyword-generator'
     | '/open-source-seo'
+    | '/openseo-vs-dataforseo'
     | '/pricing'
     | '/privacy'
     | '/roadmap'
@@ -1013,6 +1025,7 @@ export interface FileRouteTypes {
     | '/_marketing/google-search-console-mcp'
     | '/_marketing/keyword-generator'
     | '/_marketing/open-source-seo'
+    | '/_marketing/openseo-vs-dataforseo'
     | '/_marketing/pricing'
     | '/_marketing/privacy'
     | '/_marketing/roadmap'
@@ -1192,6 +1205,13 @@ declare module '@tanstack/react-router' {
       path: '/open-source-seo'
       fullPath: '/open-source-seo'
       preLoaderRoute: typeof MarketingOpenSourceSeoRouteImport
+      parentRoute: typeof MarketingRoute
+    }
+    '/_marketing/openseo-vs-dataforseo': {
+      id: '/_marketing/openseo-vs-dataforseo'
+      path: '/openseo-vs-dataforseo'
+      fullPath: '/openseo-vs-dataforseo'
+      preLoaderRoute: typeof MarketingOpenseoVsDataforseoRouteImport
       parentRoute: typeof MarketingRoute
     }
     '/_marketing/pricing': {
@@ -1712,6 +1732,7 @@ interface MarketingRouteChildren {
   MarketingGoogleSearchConsoleMcpRoute: typeof MarketingGoogleSearchConsoleMcpRoute
   MarketingKeywordGeneratorRoute: typeof MarketingKeywordGeneratorRoute
   MarketingOpenSourceSeoRoute: typeof MarketingOpenSourceSeoRoute
+  MarketingOpenseoVsDataforseoRoute: typeof MarketingOpenseoVsDataforseoRoute
   MarketingPricingRoute: typeof MarketingPricingRoute
   MarketingPrivacyRoute: typeof MarketingPrivacyRoute
   MarketingRoadmapRoute: typeof MarketingRoadmapRoute
@@ -1782,6 +1803,7 @@ const MarketingRouteChildren: MarketingRouteChildren = {
   MarketingGoogleSearchConsoleMcpRoute: MarketingGoogleSearchConsoleMcpRoute,
   MarketingKeywordGeneratorRoute: MarketingKeywordGeneratorRoute,
   MarketingOpenSourceSeoRoute: MarketingOpenSourceSeoRoute,
+  MarketingOpenseoVsDataforseoRoute: MarketingOpenseoVsDataforseoRoute,
   MarketingPricingRoute: MarketingPricingRoute,
   MarketingPrivacyRoute: MarketingPrivacyRoute,
   MarketingRoadmapRoute: MarketingRoadmapRoute,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { safeHttpUrl } from "@/shared/safe-url";
 import type { AiEngine } from "@/shared/ai-visibility";
+import type { LlmResponseResult } from "@/server/lib/dataforseoLlmSchemas";
 
 const optionalMarkdown = z.string().max(1_000_000).nullish();
 const sourceList = z.array(z.unknown()).max(2_000).nullish();
@@ -82,6 +83,31 @@ export function parseDataforseoAnswer(
     answerText: answerText.trim() ? answerText : "",
     citations: citationsFrom(sources),
     collectedAt: dateOrNull(result.datetime),
+  };
+}
+
+/**
+ * Normalize one live LLM Responses answer. The message sections hold the
+ * answer, and their annotations hold the cited pages.
+ */
+export function parseLlmResponseAnswer(
+  result: LlmResponseResult,
+): ParsedAiAnswer {
+  const sections = (result.items ?? [])
+    .filter((item) => item.type === "message")
+    .flatMap((item) => item.sections ?? []);
+  const markdown = sections
+    .map((section) => section.text ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+  const answerText = markdownToText(markdown);
+  return {
+    answerMarkdown: answerText.trim() ? markdown : null,
+    answerText: answerText.trim() ? answerText : "",
+    citations: citationsFrom(
+      sections.flatMap((section) => section.annotations ?? []),
+    ),
+    collectedAt: null,
   };
 }
 

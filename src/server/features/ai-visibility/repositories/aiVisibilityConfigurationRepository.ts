@@ -57,6 +57,8 @@ export function writeConfiguration(tx: Tx, rows: ConfigurationRows) {
           chatgpt: tracker.chatgpt,
           gemini: tracker.gemini,
           googleAiOverview: tracker.googleAiOverview,
+          claude: tracker.claude,
+          perplexity: tracker.perplexity,
           locationCode: tracker.locationCode,
           languageCode: tracker.languageCode,
         },

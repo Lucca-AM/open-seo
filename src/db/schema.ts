@@ -96,6 +96,7 @@ export const {
   projectActivationState,
   dashboardStepDismissals,
   backlinkSnapshots,
+  dataRefreshClaims,
   crawlerCredentials,
   projectContextSections,
   projectCompetitors,

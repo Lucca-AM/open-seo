@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 import { useMutation } from "@tanstack/react-query";
 import Papa from "papaparse";
 import { Plus, Loader2, Sparkles } from "lucide-react";
@@ -8,18 +8,12 @@ import { toast } from "sonner";
 import { Button } from "@/client/components/ui/button";
 import { Field, FieldLabel } from "@/client/components/ui/field";
 import { Input } from "@/client/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/client/components/ui/select";
 import type { AiTrackerState } from "@/shared/ai-visibility";
 import {
   MAX_PROMPTS_PER_ADDITION,
   type TrackerDraft,
 } from "./TrackerTrackingFields";
+import { TopicField } from "./TopicField";
 
 export function TrackerPromptFields({
   projectId,
@@ -34,11 +28,8 @@ export function TrackerPromptFields({
   onChange: (value: TrackerDraft) => void;
   onGeneratingChange: (pending: boolean) => void;
 }) {
-  const topicId = useId();
   const promptsId = useId();
   const group = value.topic;
-  // Kept separately so typing a saved topic's name doesn't hide the input.
-  const [creating, setCreating] = useState(!state.topics.includes(group.name));
   const topicPrompts = state.prompts.filter(
     (prompt) => !prompt.archived && prompt.topic === group.name,
   );
@@ -67,10 +58,6 @@ export function TrackerPromptFields({
       });
     },
   });
-  const items = [
-    ...state.topics.map((name) => ({ value: name, label: name })),
-    { value: "", label: "New topic" },
-  ];
   const update = (change: Partial<typeof group>) =>
     onChange({ ...value, topic: { ...group, ...change } });
   const insertPrompts = (index: number, prompts: string[]) => {
@@ -87,42 +74,11 @@ export function TrackerPromptFields({
   };
   return (
     <section className="space-y-4">
-      {state.topics.length > 0 && (
-        <Field>
-          <FieldLabel>Topic</FieldLabel>
-          <Select
-            items={items}
-            value={creating ? "" : group.name}
-            onValueChange={(name) => {
-              setCreating(!name);
-              update({ name: name ?? "" });
-            }}
-          >
-            <SelectTrigger className="w-full" aria-label="Topic">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {items.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      )}
-      {creating && (
-        <Field>
-          <FieldLabel htmlFor={topicId}>Topic name</FieldLabel>
-          <Input
-            id={topicId}
-            required
-            placeholder="e.g. SEO tools"
-            value={group.name}
-            onChange={(event) => update({ name: event.target.value })}
-          />
-        </Field>
-      )}
+      <TopicField
+        topics={state.topics}
+        value={group.name}
+        onChange={(name) => update({ name })}
+      />
       {topicPrompts.length > 0 &&
         topicPrompts.every((prompt) => prompt.paused) && (
           <p className="text-xs text-muted-foreground">

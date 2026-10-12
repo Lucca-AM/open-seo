@@ -1,10 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/AiVisibilityRepository", () => ({
-  AiVisibilityRepository: { getConfiguration: async () => null },
+const { getConfiguration, startRun } = vi.hoisted(() => ({
+  getConfiguration: vi.fn(),
+  startRun: vi.fn(),
 }));
+vi.mock("../repositories/AiVisibilityRepository", () => ({
+  AiVisibilityRepository: { getConfiguration },
+}));
+vi.mock("./aiVisibilityRuns", () => ({ startRun }));
 
-import { prepareWebsiteTracking } from "./websiteTrackingSetup";
+import {
+  prepareWebsiteTracking,
+  startWebsiteTrackingRun,
+} from "./websiteTrackingSetup";
+import { configuration, customer } from "./aiVisibilityTestFixtures";
+
+beforeEach(() => {
+  getConfiguration.mockResolvedValue(null);
+});
 
 const topic = (name: string) => ({
   name,
@@ -33,5 +46,18 @@ describe("prepareWebsiteTracking", () => {
       "backlink checker",
     ]);
     expect(tracking?.prompts).toHaveLength(15);
+  });
+});
+
+describe("startWebsiteTrackingRun", () => {
+  it("starts the baseline, and a run that cannot start leaves setup saved", async () => {
+    const config = configuration();
+    getConfiguration.mockResolvedValue(config);
+    startRun.mockRejectedValue(new Error("DATAFORSEO_API_KEY is missing"));
+
+    await expect(
+      startWebsiteTrackingRun("project", customer),
+    ).resolves.toBeUndefined();
+    expect(startRun).toHaveBeenCalledWith(config, "baseline", customer);
   });
 });

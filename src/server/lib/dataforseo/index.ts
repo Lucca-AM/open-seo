@@ -32,6 +32,7 @@ export {
 } from "@/server/lib/dataforseo/serp";
 export {
   fetchAiTrackingTaskResult,
+  type AiTrackingAnswer,
   type PostedAiTrackingTask,
 } from "@/server/lib/dataforseo/ai-tracking";
 export {

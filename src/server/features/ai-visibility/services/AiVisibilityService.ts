@@ -25,8 +25,13 @@ export const AiVisibilityService = {
   startResearchSetup: async (
     input: { projectId: string },
     billing: BillingCustomerContext,
+    options?: { runSeededTracking?: boolean },
   ) =>
-    (await import("./aiResearchKeywords")).startAiResearchSetup(input, billing),
+    (await import("./aiResearchKeywords")).startAiResearchSetup(
+      input,
+      billing,
+      options,
+    ),
   researchPrompts: researchAiPrompts,
   listResearchKeywords: listAiResearchKeywords,
   getTracker,

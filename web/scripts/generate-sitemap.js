@@ -35,6 +35,7 @@ const STATIC_PATHS = [
   "/semrush-pricing",
   "/ahrefs-alternative",
   "/ahrefs-pricing",
+  "/openseo-vs-dataforseo",
   "/roadmap",
   "/support",
   ...Object.values(FEATURE_PAGE_SLUGS).map((slug) => `/features/${slug}`),

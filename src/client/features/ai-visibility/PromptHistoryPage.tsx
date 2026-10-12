@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play } from "lucide-react";
 import { BackLink, PageHeader } from "@/client/components/PageHeader";
+import { SkeletonCard } from "@/client/components/SkeletonPresets";
 import { Button } from "@/client/components/ui/button";
 import { type AiRun } from "@/shared/ai-visibility";
 import { PromptAnalysis } from "./PromptAnalysis";
-import { TrackingCostReview } from "./TrackingCostReview";
+import { prefetchRunNowCost, TrackingCostReview } from "./TrackingCostReview";
 import {
-  AiLoading,
   AiQueryError,
   AiRunStatus,
+  aiPromptHistoryQueryOptions,
   aiVisibilityKey,
-  fetchAllAiVisibilityResults,
   useAiRunProgress,
   useAiVisibilityTracker,
 } from "./shared";
@@ -28,17 +28,7 @@ export function PromptHistoryPage({
   const [checking, setChecking] = useState(false);
   const [startedRun, setStartedRun] = useState<AiRun | null>(null);
   const progress = useAiRunProgress(projectId, startedRun);
-  const history = useQuery({
-    queryKey: [...aiVisibilityKey(projectId), "results", "history", promptId],
-    // Read all pages of the latest 50 runs so engine ordering cannot hide
-    // a newer execution from the selector.
-    queryFn: () =>
-      fetchAllAiVisibilityResults({
-        projectId,
-        promptId,
-        includeHistory: true,
-      }),
-  });
+  const history = useQuery(aiPromptHistoryQueryOptions(projectId, promptId));
   const state = trackerQuery.data;
   const prompt = state?.prompts.find((item) => item.id === promptId);
   const latestRun = history.data?.historyRuns.find((run) =>
@@ -49,12 +39,20 @@ export function PromptHistoryPage({
   )?.prompt;
   const busy =
     progress.run?.status === "queued" || progress.run?.status === "running";
+  const tracker = state?.tracker;
+  // Price this prompt's Run now on load, so the dialog opens on a price.
+  useEffect(() => {
+    if (tracker)
+      prefetchRunNowCost(queryClient, projectId, tracker, [promptId]);
+  }, [queryClient, projectId, promptId, tracker]);
   return (
-    <div className="space-y-5 pt-1">
-      <BackLink to="/p/$projectId/ai-visibility" params={{ projectId }}>
-        All tracked prompts
-      </BackLink>
+    <div className="space-y-4">
       <PageHeader
+        backLink={
+          <BackLink to="/p/$projectId/ai-visibility" params={{ projectId }}>
+            All tracked prompts
+          </BackLink>
+        }
         title={
           <span className="whitespace-pre-wrap" data-ph-mask>
             {prompt?.text ?? retainedPrompt ?? "Prompt analysis"}
@@ -89,7 +87,7 @@ export function PromptHistoryPage({
       {progress.run && <AiRunStatus run={progress.run} />}
       {progress.error && <AiQueryError error={progress.error} />}
       {history.isPending ? (
-        <AiLoading />
+        <SkeletonCard />
       ) : history.isError ? (
         <AiQueryError
           error={history.error}

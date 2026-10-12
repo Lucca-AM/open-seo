@@ -25,6 +25,14 @@ import { normalizeAiSuggestion } from "@/shared/ai-prompt-suggestions";
 import { ProjectContextRepository } from "@/server/features/project-context/repositories/ProjectContextRepository";
 import { AiVisibilityRepository } from "@/server/features/ai-visibility/repositories/AiVisibilityRepository";
 
+const SEARCH_RETRIES = 3;
+
+// DataForSEO's own search backend failing (e.g. 40101), not a problem with our
+// request or account.
+function isSearchOutage(error: unknown): error is AppError {
+  return error instanceof AppError && error.code === "UPSTREAM_UNAVAILABLE";
+}
+
 /** Internal research for callers that have already checked admission credits. */
 export async function researchWebsite(
   website: string,
@@ -79,6 +87,7 @@ export async function researchWebsite(
   const sources = new Set<string>();
   let searched = false;
   let searchSucceeded = false;
+  let searchOutage = false;
   let sitesRead = 0;
   const outputSchema = z.object({
     ...(missingOverview
@@ -171,21 +180,34 @@ export async function researchWebsite(
                     // Searches belong to the already-admitted research task; collect
                     // actual cost instead of reserving credits and interrupting it.
                     let response;
-                    try {
-                      response = await fetchLiveSerp({
-                        keyword,
-                        ...market,
-                        depth: 10,
-                      });
-                    } catch (error) {
-                      if (error instanceof DataforseoChargedTaskError)
-                        spend.push({
-                          provider: "dataforseo",
-                          creditFeature: "keyword_research",
-                          operation: "project_website_research",
-                          costUsd: error.billing.costUsd,
+                    for (let attempt = 0; ; attempt++) {
+                      try {
+                        response = await fetchLiveSerp({
+                          keyword,
+                          ...market,
+                          depth: 10,
                         });
-                      throw error;
+                        break;
+                      } catch (error) {
+                        if (error instanceof DataforseoChargedTaskError)
+                          spend.push({
+                            provider: "dataforseo",
+                            creditFeature: "keyword_research",
+                            operation: "project_website_research",
+                            costUsd: error.billing.costUsd,
+                          });
+                        // DataForSEO's search engine errors (40101) usually clear
+                        // within seconds. Timeouts already used their whole budget.
+                        if (
+                          attempt === SEARCH_RETRIES ||
+                          !isSearchOutage(error) ||
+                          error.name === "DataForSEOTimeoutError"
+                        )
+                          throw error;
+                      }
+                      await new Promise((resolve) =>
+                        setTimeout(resolve, 1000 * 2 ** attempt),
+                      );
                     }
                     spend.push({
                       provider: "dataforseo",
@@ -208,6 +230,16 @@ export async function researchWebsite(
                 searchSucceeded = results.some(
                   (searchResult) => searchResult.status === "fulfilled",
                 );
+                searchOutage = results.every(
+                  (searchResult) =>
+                    searchResult.status === "rejected" &&
+                    isSearchOutage(searchResult.reason),
+                );
+                if (searchOutage)
+                  return {
+                    error:
+                      "Live search is unavailable. Skip competitor research and return no competitors.",
+                  };
                 return results.map((searchResult, index) =>
                   searchResult.status === "fulfilled"
                     ? searchResult.value
@@ -262,6 +294,9 @@ export async function researchWebsite(
     const research = websiteResearchSchema.parse({
       ...preserved,
       ...output,
+      // Without live search, competitors can't be verified. The review starts
+      // with none so the user can add them instead of losing a paid run.
+      ...(searchOutage ? { competitors: [] } : {}),
       suggestedKeywords: suggestedKeywords
         .filter(
           (keyword) =>
@@ -285,7 +320,7 @@ export async function researchWebsite(
         "INTERNAL_ERROR",
         "Website research returned duplicate tracking suggestions. Please try again.",
       );
-    if (missingCompetitors && !searchSucceeded)
+    if (missingCompetitors && !searchSucceeded && !searchOutage)
       throw new AppError(
         "INTERNAL_ERROR",
         "Website research was incomplete. Please try again.",

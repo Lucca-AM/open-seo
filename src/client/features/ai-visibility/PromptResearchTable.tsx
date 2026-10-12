@@ -1,131 +1,123 @@
-import { useState } from "react";
+import { useMemo, type ComponentProps } from "react";
+import type {
+  ColumnDef,
+  OnChangeFn,
+  RowSelectionState,
+} from "@tanstack/react-table";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { SafeExternalLink } from "@/client/components/SafeExternalLink";
+import {
+  DataTable,
+  type DataTableFrameProps,
+  makeSelectionColumn,
+  useDataTable,
+  useSelectionAnchor,
+} from "@/client/components/table/DataTable";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
-import { Checkbox } from "@/client/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/client/components/ui/table";
 import type { AiResearchedPrompt } from "@/shared/ai-visibility";
 import { DomainFavicon } from "./DomainFavicon";
 
+const promptColumns: ColumnDef<AiResearchedPrompt>[] = [
+  {
+    id: "prompt",
+    header: "Prompt",
+    cell: ({ row: { original: prompt } }) => (
+      <>
+        <span>{prompt.text}</span>
+        {prompt.tracked && (
+          <Badge variant="secondary" className="ml-2">
+            Tracked
+          </Badge>
+        )}
+        {prompt.variants.length > 0 && (
+          <p
+            className="text-xs text-muted-foreground"
+            title={prompt.variants.join("\n")}
+          >
+            +{prompt.variants.length} similar{" "}
+            {prompt.variants.length === 1 ? "prompt" : "prompts"} merged
+          </p>
+        )}
+      </>
+    ),
+  },
+  {
+    id: "sources",
+    header: "Sources",
+    meta: { headerClassName: "w-40" },
+    cell: ({ row: { original: prompt } }) => (
+      <>
+        <span className="text-sm">
+          {prompt.sources.length
+            ? `${prompt.sources.length} ${prompt.sources.length === 1 ? "source" : "sources"}`
+            : "No sources"}
+        </span>
+        {prompt.ownDomainCited && (
+          <Badge variant="success" size="sm" className="ml-2">
+            You
+          </Badge>
+        )}
+      </>
+    ),
+  },
+  {
+    id: "expand",
+    header: () => <span className="sr-only">Details</span>,
+    meta: { headerClassName: "w-10" },
+    cell: ({ row }) => (
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-expanded={row.getIsExpanded()}
+        aria-label={`Show sources for ${row.original.text}`}
+        onClick={() => row.toggleExpanded()}
+      >
+        {row.getIsExpanded() ? <ChevronDown /> : <ChevronRight />}
+      </Button>
+    ),
+  },
+];
+
+/** Tracked prompts can't be selected; a selection only adds new prompts. */
 export function PromptResearchTable({
   prompts,
-  selected,
-  onToggle,
-}: {
+  rowSelection,
+  onRowSelectionChange,
+  empty,
+  ...frame
+}: DataTableFrameProps & {
   prompts: AiResearchedPrompt[];
-  selected: Set<string>;
-  onToggle: (text: string) => void;
+  rowSelection: RowSelectionState;
+  onRowSelectionChange: OnChangeFn<RowSelectionState>;
+  empty: ComponentProps<typeof DataTable>["empty"];
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-10" />
-          <TableHead>Prompt</TableHead>
-          <TableHead className="w-40">Sources</TableHead>
-          <TableHead className="w-10" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {prompts.map((prompt) => (
-          <PromptRow
-            key={prompt.text}
-            prompt={prompt}
-            selected={selected.has(prompt.text)}
-            expanded={expanded === prompt.text}
-            onToggle={() => onToggle(prompt.text)}
-            onExpand={() =>
-              setExpanded(expanded === prompt.text ? null : prompt.text)
-            }
-          />
-        ))}
-      </TableBody>
-    </Table>
+  const selectAnchorRef = useSelectionAnchor();
+  const columns = useMemo(
+    () => [
+      makeSelectionColumn<AiResearchedPrompt>(
+        selectAnchorRef,
+        (row) => `Select ${row.original.text}`,
+      ),
+      ...promptColumns,
+    ],
+    [selectAnchorRef],
   );
-}
-
-function PromptRow({
-  prompt,
-  selected,
-  expanded,
-  onToggle,
-  onExpand,
-}: {
-  prompt: AiResearchedPrompt;
-  selected: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  onExpand: () => void;
-}) {
+  const table = useDataTable({
+    data: prompts,
+    columns,
+    state: { rowSelection },
+    onRowSelectionChange,
+    getRowId: (prompt) => prompt.text,
+    enableRowSelection: (row) => !row.original.tracked,
+  });
   return (
-    <>
-      <TableRow data-state={selected ? "selected" : undefined}>
-        <TableCell>
-          <Checkbox
-            checked={selected || prompt.tracked}
-            disabled={prompt.tracked}
-            onCheckedChange={onToggle}
-            aria-label={`Select ${prompt.text}`}
-          />
-        </TableCell>
-        <TableCell className="whitespace-normal">
-          <span>{prompt.text}</span>
-          {prompt.tracked && (
-            <Badge variant="secondary" className="ml-2">
-              Tracked
-            </Badge>
-          )}
-          {prompt.variants.length > 0 && (
-            <p
-              className="text-xs text-muted-foreground"
-              title={prompt.variants.join("\n")}
-            >
-              +{prompt.variants.length} similar{" "}
-              {prompt.variants.length === 1 ? "prompt" : "prompts"} merged
-            </p>
-          )}
-        </TableCell>
-        <TableCell className="whitespace-normal">
-          <span className="text-sm">
-            {prompt.sources.length
-              ? `${prompt.sources.length} ${prompt.sources.length === 1 ? "source" : "sources"}`
-              : "No sources"}
-          </span>
-          {prompt.ownDomainCited && (
-            <Badge variant="success" size="sm" className="ml-2">
-              You
-            </Badge>
-          )}
-        </TableCell>
-        <TableCell>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-expanded={expanded}
-            aria-label={`Show sources for ${prompt.text}`}
-            onClick={onExpand}
-          >
-            {expanded ? <ChevronDown /> : <ChevronRight />}
-          </Button>
-        </TableCell>
-      </TableRow>
-      {expanded && (
-        <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={4} className="whitespace-normal">
-            <PromptSources prompt={prompt} />
-          </TableCell>
-        </TableRow>
-      )}
-    </>
+    <DataTable
+      {...frame}
+      table={table}
+      empty={empty}
+      renderExpandedRow={(row) => <PromptSources prompt={row.original} />}
+    />
   );
 }
 

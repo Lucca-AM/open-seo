@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildOnboardingPayload,
+  ONBOARDING_LAST_STEP,
   restoreOnboardingAnswers,
 } from "./onboardingModel";
 
@@ -23,7 +24,9 @@ describe("historical onboarding values", () => {
       const answers = restoreOnboardingAnswers({ ...saved, workFor });
       expect(answers.workFor).toBe(workFor);
       expect(answers.workForOther).toBe("");
-      expect(buildOnboardingPayload(answers, 4).workFor).toBe(workFor);
+      expect(
+        buildOnboardingPayload(answers, ONBOARDING_LAST_STEP).workFor,
+      ).toBe(workFor);
     },
   );
 
@@ -34,7 +37,7 @@ describe("historical onboarding values", () => {
     expect(answers.sourceOther).toBe("");
     expect(answers.selectedInterests).toEqual(interestedFeatures);
     expect(answers.interestOther).toBe("");
-    const payload = buildOnboardingPayload(answers, 4);
+    const payload = buildOnboardingPayload(answers, ONBOARDING_LAST_STEP);
     expect(payload.foundVia).toBe("Google");
     expect(payload.interestedFeatures).toEqual(interestedFeatures);
   });

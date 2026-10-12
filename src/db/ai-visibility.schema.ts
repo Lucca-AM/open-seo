@@ -20,6 +20,10 @@ export const aiTrackers = sqliteTable(
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
     chatgpt: integer("chatgpt", { mode: "boolean" }).notNull().default(true),
     gemini: integer("gemini", { mode: "boolean" }).notNull().default(false),
+    claude: integer("claude", { mode: "boolean" }).notNull().default(false),
+    perplexity: integer("perplexity", { mode: "boolean" })
+      .notNull()
+      .default(false),
     googleAiOverview: integer("google_ai_overview", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -104,7 +108,7 @@ export const aiObservations = sqliteTable(
       .notNull()
       .references(() => aiPrompts.id, { onDelete: "cascade" }),
     engine: text("engine", {
-      enum: ["chatgpt", "gemini", "google_ai_overview"],
+      enum: ["chatgpt", "gemini", "google_ai_overview", "claude", "perplexity"],
     }).notNull(),
     // Whether the prompt names the project's own brand when the run started.
     branded: integer("branded", { mode: "boolean" }).notNull(),

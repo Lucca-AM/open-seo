@@ -167,7 +167,7 @@ export const completeAiResearchSetupTool = defineAiTool({
   readOnly: false,
   path: "research",
   description:
-    "Give a project with a saved website its Prompt Research keywords. Get the user's approval first: unless keywords exist, this starts paid research with usage credits. Starting is idempotent: a running or reviewable setup is returned, not restarted. With a business overview and competitors in shared context, one model call writes the keywords and, when the project has no tracking yet, seeds three paused tracker topics with five prompts each. Missing overview and competitors are researched independently; saved values are reused. Status becomes review when basics or competitors were researched: review new competitors, or preserve the saved list when preserveCompetitors=true, then save with save_project_website_setup. While status is running, call again after about 20 seconds. Never starts answer collection.",
+    "Give a project with a saved website its Prompt Research keywords. Get the user's approval first: unless keywords exist, this starts paid research with usage credits. Starting is idempotent: a running or reviewable setup is returned, not restarted. With a business overview and competitors in shared context, one model call writes the keywords and, when the project has no tracking yet, seeds three tracker topics with five prompts each, scheduled weekly with the first check about a week later. Missing overview and competitors are researched independently; saved values are reused. Status becomes review when basics or competitors were researched: review new competitors, or preserve the saved list when preserveCompetitors=true, then save with save_project_website_setup. While status is running, call again after about 20 seconds. Never starts answer collection.",
   execute: (s, a, b) => s.startResearchSetup(a, b),
   summarize: (d) =>
     d.status === "ready"
@@ -218,7 +218,7 @@ export const saveAiVisibilityTrackerTool = defineAiTool({
   }),
   readOnly: false,
   description:
-    "Bulk create or patch AI tracking prompts, their topics, engines, country, and language. Pause or archive a topic by pausing or archiving each of its prompts. Brand name/domain and competitors come from shared Project context; manage them there. Read the tracker first and edit prompts by ID. New trackers start paused and saving uses no collection credits. When tracking is enabled, show the user the new estimate before adding prompts or engines. Do not rewrite customer prompts without direction.",
+    "Bulk create or patch AI tracking prompts, their topics, engines, country, and language. Pause or archive a topic by pausing or archiving each of its prompts. Brand name/domain and competitors come from shared Project context; manage them there. Read the tracker first and edit prompts by ID. New trackers start on a weekly schedule; saving uses no credits, and the first paid check runs about a week later. Show the user the estimate before creating a tracker or adding prompts or engines, and pause with set_ai_visibility_schedule if they do not want scheduled checks. Do not rewrite customer prompts without direction.",
   execute: (s, a) => s.saveTracker(a),
   summarize: (d) =>
     `Saved AI tracking: ${d.created} created, ${d.updated} updated, ${d.skipped} skipped.`,
@@ -230,10 +230,10 @@ export const estimateAiVisibilityCostTool = defineAiTool({
   output: aiCostOutput,
   readOnly: true,
   description:
-    "Estimate one check and the monthly cost of a daily, weekly, or monthly schedule without collecting answers. Optional patch estimates proposed settings; promptIds estimates a check of those prompts. Show the customer cost and monthly estimate before enabling tracking or running a paid check, and pass the approved check cost to run_ai_visibility_check as maxCostUsd.",
+    "Estimate one scheduled check, one-off check, and the monthly cost of a daily, weekly, or monthly schedule without collecting answers. Optional patch estimates proposed settings; promptIds estimates a check of those prompts. costUsd prices each scheduled check. runNowCostUsd prices a one-off check, which collects live answers within minutes at a higher price. Show the customer the relevant cost before enabling tracking or running a paid check, and pass the approved runNowCostUsd to run_ai_visibility_check as maxCostUsd.",
   execute: (s, a) => s.estimateCost(a),
   summarize: (d) =>
-    `${d.observations} answers: $${d.costUsd.toFixed(4)} (${d.costCredits} credits) per check. Estimate on the ${d.scheduleInterval} schedule: $${d.monthlyCostUsd.toFixed(2)}/month (${d.checksPerMonth} ${d.checksPerMonth === 1 ? "check" : "checks"}).${d.warnings.length ? ` Warnings: ${d.warnings.join("; ")}` : ""}`,
+    `${d.observations} answers: $${d.costUsd.toFixed(4)} (${d.costCredits} credits) per scheduled check, $${d.runNowCostUsd.toFixed(4)} (${d.runNowCostCredits} credits) to run now. Estimate on the ${d.scheduleInterval} schedule: $${d.monthlyCostUsd.toFixed(2)}/month (${d.checksPerMonth} ${d.checksPerMonth === 1 ? "check" : "checks"}).${d.warnings.length ? ` Warnings: ${d.warnings.join("; ")}` : ""}`,
 });
 export const setAiVisibilityScheduleTool = defineAiTool({
   name: "set_ai_visibility_schedule",
@@ -257,7 +257,7 @@ export const runAiVisibilityCheckTool = defineAiTool({
   output: aiRunOutput,
   readOnly: false,
   description:
-    "Start an explicitly approved one-off paid AI check, preserving the schedule. maxCostUsd is the cost the user approved from estimate_ai_visibility_cost; the check is refused if it now costs more. Only one check runs per project at a time. Returns a run immediately. Never call this tool to poll: use get_ai_visibility_run with the returned run ID.",
+    "Start an explicitly approved one-off paid AI check, preserving the schedule. It collects live answers, so results arrive within minutes. maxCostUsd is the runNowCostUsd the user approved from estimate_ai_visibility_cost; the check is refused if it now costs more. Only one check runs per project at a time. Returns a run immediately. Never call this tool to poll: use get_ai_visibility_run with the returned run ID.",
   execute: (s, a, b) => s.runCheck(a, b),
   summarize: (d) =>
     `Run ${d.id}: ${d.status}, ${d.completed}/${d.expected} completed. ${runNextAction(d)}`,

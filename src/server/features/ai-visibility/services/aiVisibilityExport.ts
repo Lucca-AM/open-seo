@@ -3,7 +3,7 @@ import { z } from "zod";
 import { resolveUserContextFromHeaders } from "@/middleware/ensure-user/resolve";
 import { ProjectRepository } from "@/server/features/projects/repositories/ProjectRepository";
 import type { AiExportInput } from "@/types/schemas/ai-visibility";
-import { loadAiAnswer, loadAiResultSet } from "./aiVisibilityResults";
+import { loadAiFullAnswers } from "./aiVisibilityResults";
 import { AiVisibilityError } from "./aiVisibilityErrors";
 
 function csvCell(value: string | number | boolean | null | undefined) {
@@ -19,19 +19,11 @@ export async function exportAiData(input: AiExportInput, baseUrl: string) {
       "EXPORT_SCOPE",
       "Choose one run to export. Prompt history can be inspected separately.",
     );
-  const { result } = await loadAiResultSet(input);
+  const { result, answers } = await loadAiFullAnswers(input);
   if (!result.runId)
     throw new AiVisibilityError(
       "NO_RESULTS",
       "There is no baseline or scheduled run to export. Select a manual run explicitly if that is the evidence you want.",
-    );
-  const answers = [];
-  for (const row of result.rows)
-    answers.push(
-      await loadAiAnswer(
-        { projectId: input.projectId, observationId: row.id },
-        { full: true },
-      ),
     );
   const body =
     input.format === "json"

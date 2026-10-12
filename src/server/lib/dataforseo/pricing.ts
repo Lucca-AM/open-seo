@@ -47,8 +47,14 @@ import {
   resolveLlmMentionsLimit,
 } from "@/server/lib/dataforseo/ai";
 import type { LlmResponseModelSlug } from "@/server/lib/dataforseo/llm-models";
-import { postAiTrackingTasks } from "@/server/lib/dataforseo/ai-tracking";
-import { AI_RECORD_COST_USD } from "@/shared/ai-visibility";
+import {
+  fetchAiTrackingLiveAnswer,
+  postAiTrackingTasks,
+} from "@/server/lib/dataforseo/ai-tracking";
+import {
+  AI_LIVE_RECORD_COST_USD,
+  AI_RECORD_COST_USD,
+} from "@/shared/ai-visibility";
 import {
   costPerSerpAtDepth,
   serpKeywordCostMultiplier,
@@ -128,6 +134,15 @@ const LLM_RESPONSE_USD: Record<
   gemini: { webSearch: 0.11, noSearch: 0.05 },
   perplexity: { webSearch: 0.04, noSearch: 0.04 },
 };
+
+/** Estimated USD for one live LLM response at the 4096-token output cap. */
+export function llmResponseUsd(
+  modelSlug: LlmResponseModelSlug,
+  webSearch: boolean,
+): number {
+  const price = LLM_RESPONSE_USD[modelSlug];
+  return webSearch ? price.webSearch : price.noSearch;
+}
 
 // SERP Google Maps and Local Finder, live. measured: Maps bills one request
 // through depth 100 ($0.002 at depth 20 and 100), and no caller asks for
@@ -296,11 +311,16 @@ export const dataforseoPricing = {
       postAiTrackingTasks,
       (input) => input.tasks.length * AI_RECORD_COST_USD,
     ),
-    llmResponse: priced(fetchLlmResponse, (input) => {
-      const price = LLM_RESPONSE_USD[input.modelSlug];
-      return (input.webSearch ?? LLM_RESPONSE_WEB_SEARCH_DEFAULT)
-        ? price.webSearch
-        : price.noSearch;
-    }),
+    // One live answer, on every tracked engine.
+    trackingLive: priced(
+      fetchAiTrackingLiveAnswer,
+      () => AI_LIVE_RECORD_COST_USD,
+    ),
+    llmResponse: priced(fetchLlmResponse, (input) =>
+      llmResponseUsd(
+        input.modelSlug,
+        input.webSearch ?? LLM_RESPONSE_WEB_SEARCH_DEFAULT,
+      ),
+    ),
   },
 } as const;

@@ -9,6 +9,8 @@ const STANDARD_MESSAGES: Record<ErrorCode, string> = {
     "An active hosted subscription is required before you can use OpenSEO.",
   INSUFFICIENT_CREDITS:
     "You don't have enough credits for this. Upgrade your plan or buy more credits to keep going.",
+  AUDIT_RENDERING_UNAVAILABLE:
+    "JavaScript rendering is not configured on this deployment. Ask your administrator to enable a renderer.",
   FORBIDDEN: "You do not have access to this resource.",
   NOT_FOUND: "The requested resource was not found.",
   AUDIT_CAPACITY_REACHED:

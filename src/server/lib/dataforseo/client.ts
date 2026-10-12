@@ -59,7 +59,10 @@ import {
   fetchLlmResponse,
   fetchLlmTopPages,
 } from "@/server/lib/dataforseo/ai";
-import { postAiTrackingTasks } from "@/server/lib/dataforseo/ai-tracking";
+import {
+  fetchAiTrackingLiveAnswer,
+  postAiTrackingTasks,
+} from "@/server/lib/dataforseo/ai-tracking";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 import { AppError } from "@/server/lib/errors";
 
@@ -296,6 +299,21 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
         dataforseoPricing.aiSearch.trackingTaskPost,
         "ai_prompt_responses",
       ),
+      // A manual run's live answers share one credit hold and one settle (see
+      // meterDataforseoCalls). Resolves per call, in order.
+      trackingLiveBatch: (
+        inputs: Parameters<typeof fetchAiTrackingLiveAnswer>[0][],
+      ) =>
+        meterDataforseoCalls(
+          customer,
+          inputs.map((input) => () => fetchAiTrackingLiveAnswer(input)),
+          inputs.map((input) =>
+            creditsForProviderUsd(
+              dataforseoPricing.aiSearch.trackingLive(input),
+            ),
+          ),
+          "ai_prompt_responses",
+        ),
     },
   } as const;
 }

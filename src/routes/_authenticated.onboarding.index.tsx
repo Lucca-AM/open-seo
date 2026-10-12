@@ -6,6 +6,7 @@ import { PostSignupOnboarding } from "@/client/features/onboarding/PostSignupOnb
 import {
   buildOnboardingPayload,
   ONBOARDING_LAST_STEP,
+  ONBOARDING_STEPS,
   type OnboardingAnswers,
   onboardingAnswersQueryOptions,
   restoreOnboardingAnswers,
@@ -84,7 +85,7 @@ function OnboardingFlow({
     } catch {
       return;
     }
-    if (step === 0) {
+    if (ONBOARDING_STEPS[step] === "interests") {
       captureClientEvent("onboarding:interests_selected", {
         interests: answers.selectedInterests,
         interest_other: answers.interestOther.trim() || undefined,
@@ -99,7 +100,10 @@ function OnboardingFlow({
     } catch {
       return;
     }
-    captureClientEvent("onboarding:step_skipped", { step });
+    captureClientEvent("onboarding:step_skipped", {
+      step,
+      step_name: ONBOARDING_STEPS[step],
+    });
     goToStep(step + 1);
   };
 
@@ -118,7 +122,6 @@ function OnboardingFlow({
       work_for: answers.workFor,
       source: answers.source,
     });
-    // The dashboard's onboarding checklist owns MCP coaching now.
     void navigate({ to: "/", replace: true });
   };
 

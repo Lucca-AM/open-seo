@@ -161,6 +161,26 @@ async function getEvidence(observationIds: string[]) {
   return { sources, matches };
 }
 
+/**
+ * Prompts with at least one collected answer, in any run. A completed
+ * collection with no answer text (no AI Overview shown) does not count.
+ */
+async function listAnsweredPromptIds(trackerId: string) {
+  const rows = await db
+    .selectDistinct({ promptId: aiObservations.promptId })
+    .from(aiObservations)
+    .innerJoin(aiPrompts, eq(aiPrompts.id, aiObservations.promptId))
+    .where(
+      and(
+        eq(aiPrompts.trackerId, trackerId),
+        eq(aiObservations.status, "completed"),
+        // SQL `<> ''` is also false for NULL, so this excludes both.
+        ne(aiObservations.answerMarkdown, ""),
+      ),
+    );
+  return rows.map((row) => row.promptId);
+}
+
 /** Replaces an answer's evidence, so a retried collect step stays idempotent. */
 async function persistAnswer(input: {
   observationId: string;
@@ -275,6 +295,7 @@ export const AiVisibilityRepository = {
     db.update(aiRuns).set(values).where(eq(aiRuns.id, id)),
   getObservations,
   getObservation,
+  listAnsweredPromptIds,
   getObservationStatuses: (runIds: string[]) =>
     runIds.length
       ? db

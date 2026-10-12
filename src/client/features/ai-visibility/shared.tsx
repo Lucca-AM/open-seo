@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { QueryError } from "@/client/components/QueryState";
 import { Spinner } from "@/client/components/Spinner";
@@ -8,9 +8,11 @@ import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { Progress } from "@/client/components/ui/progress";
 import {
+  getAiResearchSetup,
   getAiVisibilityRun,
   getAiVisibilityTracker,
   getAiVisibilityResults,
+  listAiResearchKeywords,
 } from "@/serverFunctions/ai-visibility";
 import type { AiRun } from "@/shared/ai-visibility";
 
@@ -20,7 +22,7 @@ export const aiVisibilityKey = (projectId: string) => [
 ];
 
 /** Read the full bounded result set for prompt inventory and history. */
-export async function fetchAllAiVisibilityResults(
+async function fetchAllAiVisibilityResults(
   input: Omit<
     Parameters<typeof getAiVisibilityResults>[0]["data"],
     "cursor" | "limit" | "branded"
@@ -40,12 +42,59 @@ export async function fetchAllAiVisibilityResults(
   return { ...first, rows };
 }
 
-export function useAiVisibilityTracker(projectId: string) {
-  return useQuery({
+export const aiTrackerQueryOptions = (projectId: string) =>
+  queryOptions({
     queryKey: [...aiVisibilityKey(projectId), "tracker"],
     queryFn: () => getAiVisibilityTracker({ data: { projectId } }),
     staleTime: 0,
   });
+
+export const aiResearchSetupQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: [...aiVisibilityKey(projectId), "researchSetup"],
+    queryFn: () => getAiResearchSetup({ data: { projectId } }),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 3000 : false,
+  });
+
+export const aiResearchKeywordsQueryOptions = (projectId: string) =>
+  queryOptions({
+    queryKey: [...aiVisibilityKey(projectId), "researchKeywords"],
+    queryFn: () => listAiResearchKeywords({ data: { projectId } }),
+  });
+
+/** Every answer in a run, so each prompt can show its per-engine result. */
+export const aiRunResultsQueryOptions = (
+  projectId: string,
+  runId: string | undefined,
+) =>
+  queryOptions({
+    queryKey: [...aiVisibilityKey(projectId), "results", "all", runId],
+    queryFn: async () => {
+      const result = await fetchAllAiVisibilityResults({ projectId, runId });
+      return result.rows;
+    },
+    enabled: Boolean(runId),
+  });
+
+export const aiPromptHistoryQueryOptions = (
+  projectId: string,
+  promptId: string,
+) =>
+  queryOptions({
+    queryKey: [...aiVisibilityKey(projectId), "results", "history", promptId],
+    // Read all pages of the latest 50 runs so engine ordering cannot hide
+    // a newer execution from the selector.
+    queryFn: () =>
+      fetchAllAiVisibilityResults({
+        projectId,
+        promptId,
+        includeHistory: true,
+      }),
+  });
+
+export function useAiVisibilityTracker(projectId: string) {
+  return useQuery(aiTrackerQueryOptions(projectId));
 }
 
 export function useAiRunProgress(projectId: string, initialRun: AiRun | null) {

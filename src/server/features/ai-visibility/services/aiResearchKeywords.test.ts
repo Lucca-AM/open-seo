@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listCompetitors, listResearchKeywords, research, workflow } =
-  vi.hoisted(() => ({
-    listCompetitors: vi.fn(),
-    listResearchKeywords: vi.fn(),
-    research: vi.fn(),
-    workflow: { get: vi.fn(), create: vi.fn() },
-  }));
+const {
+  listCompetitors,
+  listResearchKeywords,
+  research,
+  workflow,
+  prepareWebsiteTracking,
+  startWebsiteTrackingRun,
+} = vi.hoisted(() => ({
+  listCompetitors: vi.fn(),
+  listResearchKeywords: vi.fn(),
+  research: vi.fn(),
+  workflow: { get: vi.fn(), create: vi.fn() },
+  prepareWebsiteTracking: vi.fn(),
+  startWebsiteTrackingRun: vi.fn(),
+}));
 
 vi.mock("cloudflare:workers", () => ({
   env: { AI_VISIBILITY_WORKFLOW: workflow },
@@ -23,7 +31,10 @@ vi.mock("../repositories/aiVisibilityConfigurationRepository", () => ({
   writeConfiguration: vi.fn(),
   writeResearchKeywords: vi.fn(),
 }));
-vi.mock("./websiteTrackingSetup", () => ({ prepareWebsiteTracking: vi.fn() }));
+vi.mock("./websiteTrackingSetup", () => ({
+  prepareWebsiteTracking,
+  startWebsiteTrackingRun,
+}));
 vi.mock("@/server/features/projects/repositories/ProjectRepository", () => ({
   ProjectRepository: {
     getProjectForOrganization: async () => ({
@@ -66,6 +77,7 @@ describe("runAiResearchSetup", () => {
   beforeEach(() => {
     listResearchKeywords.mockResolvedValue([]);
     listCompetitors.mockResolvedValue([]);
+    prepareWebsiteTracking.mockResolvedValue(null);
     research.mockResolvedValue({
       name: "OpenSEO",
       domain: "openseo.so",
@@ -90,6 +102,19 @@ describe("runAiResearchSetup", () => {
       runAiResearchSetup({ projectId: "project" }, customer),
     ).resolves.toEqual({ review: null });
     expect(research).not.toHaveBeenCalled();
+  });
+
+  it("runs newly seeded tracking once only for in-app setup", async () => {
+    listCompetitors.mockResolvedValue([{ domain: "ahrefs.com" }]);
+    prepareWebsiteTracking.mockResolvedValue({ prompts: [] });
+
+    await runAiResearchSetup({ projectId: "project" }, customer);
+    expect(startWebsiteTrackingRun).not.toHaveBeenCalled();
+
+    await runAiResearchSetup({ projectId: "project" }, customer, {
+      runSeededTracking: true,
+    });
+    expect(startWebsiteTrackingRun).toHaveBeenCalledWith("project", customer);
   });
 
   it("returns website research for competitor review when competitors are missing", async () => {
@@ -155,6 +180,7 @@ describe("startAiResearchSetup", () => {
       id: "ai-research-setup-project",
       params: {
         setupProjectId: "project",
+        runSeededTracking: false,
         customer: { ...customer, projectId: "project" },
       },
     });

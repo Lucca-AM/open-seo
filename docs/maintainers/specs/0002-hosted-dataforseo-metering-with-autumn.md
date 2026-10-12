@@ -33,7 +33,7 @@ Estimate and deduction use one formula (`creditsForProviderUsd`), so they cannot
 
 A live rank check batch shares its holds instead of taking one per call. It takes at most one hold on each balance, and each call goes where a hold of its own would go: in order, on `usage_credits` while they cover it, else on `topup_credits`, else that call alone is refused. Each hold is settled once, with only its own calls. Every call is still converted to credits on its own, so a batch costs exactly what the same calls would cost one at a time.
 
-AI visibility tracking posts each batch of prompts through the client like queued rank checks; collecting the answers is free. Admitted website/setup research instead checks for a positive balance once, finishes all research without another credit gate, and settles actual usage through `billResearchSpend`, allowing a negative balance; it owns metering for its raw provider calls.
+Scheduled AI visibility checks post each batch of prompts through the client like queued rank checks; collecting the answers is free. A manual AI visibility check collects live answers instead, and each batch of live calls shares one hold and one settle, like a manual rank check. Admitted website/setup research instead checks for a positive balance once, finishes all research without another credit gate, and settles actual usage through `billResearchSpend`, allowing a negative balance; it owns metering for its raw provider calls.
 
 In non-hosted mode, the client skips Autumn and executes the DataForSEO call directly.
 

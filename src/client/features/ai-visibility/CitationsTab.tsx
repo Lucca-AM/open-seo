@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { SafeExternalLink } from "@/client/components/SafeExternalLink";
 import { SegmentedToggle } from "@/client/components/SegmentedToggle";
 import { SkeletonTableRows } from "@/client/components/SkeletonPresets";
@@ -26,6 +26,7 @@ import { getAiVisibilitySources } from "@/serverFunctions/ai-visibility";
 import {
   AI_ENGINE_LABELS,
   type AiEngine,
+  type AiPrompt,
   type AiSourceRow,
   type AiTrackerState,
 } from "@/shared/ai-visibility";
@@ -37,10 +38,12 @@ export function CitationsTab({
   projectId,
   state,
   runId,
+  collecting,
 }: {
   projectId: string;
   state: AiTrackerState;
   runId: string | undefined;
+  collecting: boolean;
 }) {
   const [groupBy, setGroupBy] = useState<"url" | "domain">("url");
   const [ownership, setOwnership] = useState<
@@ -150,10 +153,14 @@ export function CitationsTab({
         />
       ) : !query.data.rows.length ? (
         <p className="p-10 text-center text-sm text-muted-foreground">
-          No citations match these filters.
+          {collecting
+            ? "Collecting answers. Cited pages appear here as answers arrive."
+            : "No citations match these filters."}
         </p>
       ) : (
         <SourcesTable
+          projectId={projectId}
+          prompts={state.prompts}
           rows={query.data.rows}
           groupBy={groupBy}
           engines={state.engines}
@@ -191,14 +198,19 @@ const OWNERSHIP_ITEMS = [
 ] as const;
 
 function SourcesTable({
+  projectId,
+  prompts,
   rows,
   groupBy,
   engines,
 }: {
+  projectId: string;
+  prompts: AiPrompt[];
   rows: AiSourceRow[];
   groupBy: "url" | "domain";
   engines: AiEngine[];
 }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
   return (
     <Table>
       <TableHeader>
@@ -210,50 +222,117 @@ function SourcesTable({
           <TableHead>Answers</TableHead>
           <TableHead>Prompts</TableHead>
           <TableHead>Engines</TableHead>
+          <TableHead />
         </TableRow>
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <TableRow key={row.key}>
-            <TableCell className="min-w-60 max-w-lg whitespace-normal">
-              <SafeExternalLink
-                url={row.url || `https://${row.domain}`}
-                label={row.title || row.url || row.domain}
-                className="flex items-start gap-1.5 break-all text-sm text-primary hover:underline"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">{row.domain}</p>
-            </TableCell>
-            <TableCell className="whitespace-nowrap text-xs">
-              {row.ownership === "own"
-                ? "Your domain"
-                : row.ownership === "competitor"
-                  ? "Competitor"
-                  : "Third party"}
-            </TableCell>
-            <TableCell>{row.answerCount}</TableCell>
-            <TableCell>{row.promptCount}</TableCell>
-            <TableCell>
-              <div className="flex flex-wrap items-center gap-3">
-                {engines.map((tracked) => {
-                  const count = row.engines.find(
-                    (item) => item.engine === tracked,
-                  )?.answerCount;
-                  return (
-                    <span
-                      key={tracked}
-                      title={AI_ENGINE_LABELS[tracked]}
-                      className={`flex items-center gap-1 text-xs tabular-nums ${count ? "" : "text-muted-foreground/60"}`}
-                    >
-                      <EngineLabel engine={tracked} />
-                      {count ?? "–"}
-                    </span>
-                  );
-                })}
-              </div>
-            </TableCell>
-          </TableRow>
+          <SourceRow
+            key={row.key}
+            projectId={projectId}
+            prompts={prompts.filter((prompt) =>
+              row.promptIds.includes(prompt.id),
+            )}
+            row={row}
+            engines={engines}
+            expanded={expanded === row.key}
+            onExpand={() => setExpanded(expanded === row.key ? null : row.key)}
+          />
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+function SourceRow({
+  projectId,
+  prompts,
+  row,
+  engines,
+  expanded,
+  onExpand,
+}: {
+  projectId: string;
+  prompts: AiPrompt[];
+  row: AiSourceRow;
+  engines: AiEngine[];
+  expanded: boolean;
+  onExpand: () => void;
+}) {
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer"
+        onClick={(event) => {
+          // Opening the cited page should not also toggle the row.
+          if (!(event.target instanceof Element && event.target.closest("a")))
+            onExpand();
+        }}
+      >
+        <TableCell className="min-w-60 max-w-lg whitespace-normal">
+          <SafeExternalLink
+            url={row.url || `https://${row.domain}`}
+            label={row.title || row.url || row.domain}
+            className="flex items-start gap-1.5 break-all text-sm text-primary hover:underline"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">{row.domain}</p>
+        </TableCell>
+        <TableCell className="whitespace-nowrap text-xs">
+          {row.ownership === "own"
+            ? "Your domain"
+            : row.ownership === "competitor"
+              ? "Competitor"
+              : "Third party"}
+        </TableCell>
+        <TableCell>{row.answerCount}</TableCell>
+        <TableCell>{row.promptCount}</TableCell>
+        <TableCell>
+          <div className="flex flex-wrap items-center gap-3">
+            {engines.map((tracked) => {
+              const count = row.engines.find(
+                (item) => item.engine === tracked,
+              )?.answerCount;
+              return (
+                <span
+                  key={tracked}
+                  title={AI_ENGINE_LABELS[tracked]}
+                  className={`flex items-center gap-1 text-xs tabular-nums ${count ? "" : "text-muted-foreground/60"}`}
+                >
+                  <EngineLabel engine={tracked} />
+                  {count ?? "–"}
+                </span>
+              );
+            })}
+          </div>
+        </TableCell>
+        <TableCell className="w-10">
+          {/* The click bubbles to the row, which does the toggling. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-expanded={expanded}
+            aria-label={`Show prompts that cited ${row.title || row.url || row.domain}`}
+          >
+            {expanded ? <ChevronDown /> : <ChevronRight />}
+          </Button>
+        </TableCell>
+      </TableRow>
+      {expanded &&
+        prompts.map((prompt) => (
+          <TableRow key={prompt.id} className="bg-muted/30">
+            {/* The link fills the cell so the whole row opens the prompt. */}
+            <TableCell colSpan={6} className="p-0 whitespace-normal">
+              <Link
+                to="/p/$projectId/ai-visibility/prompts/$promptId"
+                params={{ projectId, promptId: prompt.id }}
+                className="block py-1.5 pr-4 pl-8 text-sm whitespace-pre-wrap"
+                data-ph-mask
+              >
+                {prompt.text}
+              </Link>
+            </TableCell>
+          </TableRow>
+        ))}
+    </>
   );
 }

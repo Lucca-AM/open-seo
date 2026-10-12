@@ -14,29 +14,37 @@ export type TrackerSetupReviewData = {
 export function TrackerSetupReview({
   review,
   enabled,
+  creating,
   pending,
   error,
-  canRun,
-  running,
+  canSchedule,
+  scheduling,
   onBack,
   onSave,
-  onSaveAndRun,
+  onSaveAndSchedule,
 }: {
   review: TrackerSetupReviewData;
   enabled: boolean;
+  /** No tracker yet; saving creates one on the weekly schedule. */
+  creating: boolean;
   pending: boolean;
   error: unknown;
-  canRun: boolean;
-  running: boolean;
+  canSchedule: boolean;
+  scheduling: boolean;
   onBack: () => void;
   onSave: () => void;
-  onSaveAndRun: () => void;
+  onSaveAndSchedule: () => void;
 }) {
+  const paused = !enabled && !creating;
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Review your changes before saving.{" "}
-        {enabled ? "These settings apply to your enabled schedule." : ""}
+        {enabled
+          ? "These settings apply to your enabled schedule."
+          : creating
+            ? "Tracking runs weekly. The first check is a week from now; use Run now for results sooner."
+            : "Track weekly to collect fresh answers once a week. A tracker that has never run on a schedule also runs its first check now."}
       </p>
       <dl className="grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm border-border">
         {review.patch.engines && (
@@ -112,21 +120,31 @@ export function TrackerSetupReview({
         </Button>
         <Button
           type="button"
-          variant={enabled ? "default" : "secondary"}
+          variant={paused ? "secondary" : "default"}
           disabled={pending}
           onClick={onSave}
         >
-          {pending && !running && <Loader2 className="size-4 animate-spin" />}
-          {enabled ? "Save reviewed changes" : "Save as paused"}
+          {pending && !scheduling && (
+            <Loader2 className="size-4 animate-spin" />
+          )}
+          {enabled
+            ? "Save reviewed changes"
+            : creating
+              ? "Save and track weekly"
+              : "Save as paused"}
         </Button>
-        {!enabled && (
+        {paused && (
           <Button
             type="button"
-            disabled={pending || !canRun || review.estimate.observations === 0}
-            onClick={onSaveAndRun}
+            disabled={
+              pending || !canSchedule || review.estimate.observations === 0
+            }
+            onClick={onSaveAndSchedule}
           >
-            {pending && running && <Loader2 className="size-4 animate-spin" />}
-            Save and run now
+            {pending && scheduling && (
+              <Loader2 className="size-4 animate-spin" />
+            )}
+            Save and track weekly
           </Button>
         )}
       </DialogFooter>

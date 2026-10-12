@@ -14,8 +14,9 @@ const { testDb } = await vi.hoisted(async () => {
   const { createAiVisibilityTestDb } = await import("../aiVisibilityTestDb");
   return { testDb: await createAiVisibilityTestDb() };
 });
+const r2Put = vi.hoisted(() => vi.fn<(key: string, body: string) => void>());
 vi.mock("cloudflare:workers", () => ({
-  env: { DATABASE_PROVIDER: "d1", R2: { put: vi.fn() } },
+  env: { DATABASE_PROVIDER: "d1", R2: { put: r2Put } },
 }));
 vi.mock("@/db", () => ({ db: testDb.db }));
 vi.mock("@/db/runBatch", () => ({ runBatch: testDb.runBatch }));
@@ -187,7 +188,12 @@ describe("AI visibility results", () => {
       ownership: "all",
     });
     expect(sources.rows).toMatchObject([
-      { url: "https://openseo.so/pricing", ownership: "own", answerCount: 2 },
+      {
+        url: "https://openseo.so/pricing",
+        ownership: "own",
+        answerCount: 2,
+        promptIds: ["prompt-0", "prompt-1"],
+      },
       { url: "https://ahrefs.com/blog", ownership: "competitor" },
     ]);
   });
@@ -237,5 +243,33 @@ describe("AI visibility export", () => {
     expect(url).toMatch(
       /^https:\/\/app\.openseo\.so\/api\/ai-visibility\/download\?projectId=project&exportId=/,
     );
+  });
+
+  it("writes each answer with its own mentions and citations", async () => {
+    await seedRun("baseline", [
+      {
+        markdown: "OpenSEO",
+        mentioned: ["OpenSEO"],
+        sources: ["https://openseo.so/pricing"],
+      },
+      {
+        markdown: "Ahrefs",
+        mentioned: ["Ahrefs"],
+        sources: ["https://ahrefs.com/blog"],
+      },
+    ]);
+    await exportAiData(
+      { ...query, includeHistory: false, competitorGap: false, format: "csv" },
+      "https://app.openseo.so",
+    );
+    const csv = r2Put.mock.calls[0]?.[1];
+    expect(csv?.split("\r\n").slice(1)).toEqual([
+      expect.stringContaining(
+        '"Question 0?","chatgpt","completed","","OpenSEO","https://openseo.so/pricing","OpenSEO"',
+      ),
+      expect.stringContaining(
+        '"Question 1?","chatgpt","completed","","Ahrefs","https://ahrefs.com/blog","Ahrefs"',
+      ),
+    ]);
   });
 });

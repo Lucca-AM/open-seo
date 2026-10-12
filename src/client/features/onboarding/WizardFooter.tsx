@@ -38,18 +38,11 @@ export function WizardFooter({
         >
           <ArrowLeft className="size-3.5" /> Back
         </Button>
-      ) : onSkip ? (
-        <Button
-          type="button"
-          variant="ghost"
-          className="font-semibold"
-          onClick={onSkip}
-        >
-          {skipLabel}
-        </Button>
-      ) : null}
+      ) : (
+        <span />
+      )}
       <div className="flex items-center gap-2">
-        {onBack && onSkip ? (
+        {onSkip ? (
           <Button
             type="button"
             variant="ghost"

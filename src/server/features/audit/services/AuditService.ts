@@ -6,7 +6,6 @@ import {
 } from "@/server/lib/audit/rendering-billing";
 import { env } from "cloudflare:workers";
 import {
-  customerHasManagedAccess,
   customerHasPaidPlan,
   getOrCreateOrganizationCustomer,
   type BillingCustomerContext,
@@ -34,25 +33,13 @@ import {
 import { reconcileRunningAudit } from "@/server/features/audit/services/auditReconciler";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 
-// Plan-tier limits are the abuse bound in hosted mode: free accounts get small
-// audits with a bounded burst, paid keeps the full limits, and customers with
-// no Autumn product at all are turned away. Self-hosted isn't gated.
+// Free accounts keep bounded audit capacity; rendering reserves usage credits.
 async function resolveAuditLimitTier(
   customer: BillingCustomerContext,
 ): Promise<AuditLimitTier> {
   if (!(await isHostedServerAuthMode())) return "self_hosted";
-  // An org minted outside a billing path (better-auth hooks, MCP auth) has no
-  // Autumn customer yet, and `check` 404s instead of reporting no access — a
-  // brand-new MCP user's first audit failed with a raw billing error.
   await getOrCreateOrganizationCustomer(customer);
-  const [hasManagedAccess, hasPaidPlan] = await Promise.all([
-    customerHasManagedAccess(customer.organizationId),
-    customerHasPaidPlan(customer.organizationId),
-  ]);
-  if (!hasManagedAccess) {
-    throw new AppError("PAYMENT_REQUIRED", "Subscribe to run site audits");
-  }
-  return hasPaidPlan ? "paid" : "free";
+  return (await customerHasPaidPlan(customer.organizationId)) ? "paid" : "free";
 }
 
 async function startAudit(input: {
@@ -68,7 +55,7 @@ async function startAudit(input: {
   const renderJavaScript = input.renderJavaScript ?? false;
   if (renderJavaScript && !(await isAuditRenderingAllowed())) {
     throw new AppError(
-      "FORBIDDEN",
+      "AUDIT_RENDERING_UNAVAILABLE",
       "JavaScript rendering is not available on this deployment. It needs a Cloudflare deployment with Browser Run, or CONTEXT_API_KEY. Run the audit without rendering instead.",
     );
   }

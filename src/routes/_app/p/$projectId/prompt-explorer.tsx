@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { PromptExplorerPage } from "@/client/features/ai-search/PromptExplorerPage";
 import { AiResearchSetupGate } from "@/client/features/ai-visibility/AiResearchSetupGate";
+import { aiResearchSetupQueryOptions } from "@/client/features/ai-visibility/shared";
 import { ProjectWebsiteGate } from "@/client/features/projects/ProjectWebsiteGate";
+import { queryClient } from "@/client/tanstack-db/queryClient";
 import {
   promptExplorerSearchSchema,
   type PromptExplorerModel,
@@ -10,6 +12,12 @@ import {
 
 export const Route = createFileRoute("/_app/p/$projectId/prompt-explorer")({
   validateSearch: promptExplorerSearchSchema,
+  // Start the setup gate's read on link intent, as AI visibility does.
+  loader: ({ params }) => {
+    void queryClient.prefetchQuery(
+      aiResearchSetupQueryOptions(params.projectId),
+    );
+  },
   component: PromptExplorerRoute,
 });
 

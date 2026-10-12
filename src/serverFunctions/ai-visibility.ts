@@ -53,6 +53,7 @@ export const startAiResearchSetup = createServerFn({ method: "POST" })
     AiVisibilityService.startResearchSetup(
       { projectId: context.projectId },
       context,
+      { runSeededTracking: true },
     ),
   );
 

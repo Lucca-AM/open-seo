@@ -41,7 +41,8 @@ export function aiRunView(
     pending: observations.length - completed - failed,
     createdAt: run.createdAt,
     completedAt: run.completedAt,
-    pollAfterSeconds: 20,
+    // Manual and baseline runs collect live answers, which arrive within seconds.
+    pollAfterSeconds: run.trigger === "scheduled" ? 20 : 5,
   };
 }
 
@@ -82,7 +83,7 @@ function rowsFor(
   }));
 }
 
-export async function loadAiResultSet(rawInput: AiResultsInput) {
+async function loadAiResultSet(rawInput: AiResultsInput) {
   const input = {
     ...rawInput,
     runId: rawInput.runId ?? undefined,
@@ -156,7 +157,7 @@ export async function loadAiResultSet(rawInput: AiResultsInput) {
     },
     truncated: input.includeHistory && runs.length === 50,
   };
-  return { result, runs, evidence };
+  return { result, runs, run, observations: scoped, evidence };
 }
 
 function resultPage(
@@ -206,7 +207,45 @@ export async function loadAiAnswer(
       "ANSWER_NOT_FOUND",
       "This answer is not available in the selected project.",
     );
-  const evidence = await repo.getEvidence([observation.id]);
+  return answerView(
+    observation,
+    run,
+    await repo.getEvidence([observation.id]),
+    full,
+  );
+}
+
+/** Every answer of one run in full, from a single result-set read. */
+export async function loadAiFullAnswers(input: AiResultsInput) {
+  const { result, run, observations, evidence } = await loadAiResultSet(input);
+  const sources = groupByProp(evidence.sources, "observationId");
+  const matches = groupByProp(evidence.matches, "observationId");
+  // Rows carry the competitor-gap filter; observations do not.
+  const rowIds = new Set(result.rows.map((row) => row.id));
+  const answers = run
+    ? observations
+        .filter((observation) => rowIds.has(observation.id))
+        .map((observation) =>
+          answerView(
+            observation,
+            run,
+            {
+              sources: sources[observation.id] ?? [],
+              matches: matches[observation.id] ?? [],
+            },
+            true,
+          ),
+        )
+    : [];
+  return { result, answers };
+}
+
+function answerView(
+  observation: ObservationWithPrompt,
+  run: RunRow,
+  evidence: Evidence,
+  full: boolean,
+): AiAnswer {
   const row = rowsFor([observation], evidence)[0];
   const markdown = observation.answerMarkdown;
   const answerText = markdown ? markdownToText(markdown) : null;
@@ -274,6 +313,7 @@ export async function loadAiSources(input: AiSourcesInput): Promise<AiSources> {
         ownership,
         answerCount: 0,
         promptCount: 0,
+        promptIds: [],
         engines: [],
         observationIds: [],
         truncated: false,
@@ -294,6 +334,7 @@ export async function loadAiSources(input: AiSourcesInput): Promise<AiSources> {
       ...g.row,
       answerCount: g.answers.size,
       promptCount: g.prompts.size,
+      promptIds: [...g.prompts],
       engines: [...g.engines].map(([engine, answers]) => ({
         engine,
         answerCount: answers.size,

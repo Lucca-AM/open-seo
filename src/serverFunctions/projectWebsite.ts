@@ -20,5 +20,6 @@ export const saveProjectWebsiteSetup = createServerFn({ method: "POST" })
       { ...data, projectId: context.projectId },
       context,
       "user",
+      { runSeededTracking: true },
     ),
   );

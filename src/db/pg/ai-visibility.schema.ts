@@ -21,6 +21,8 @@ export const aiTrackers = pgTable(
     enabled: boolean("enabled").notNull().default(false),
     chatgpt: boolean("chatgpt").notNull().default(true),
     gemini: boolean("gemini").notNull().default(false),
+    claude: boolean("claude").notNull().default(false),
+    perplexity: boolean("perplexity").notNull().default(false),
     googleAiOverview: boolean("google_ai_overview").notNull().default(false),
     locationCode: integer("location_code").notNull().default(2840),
     languageCode: text("language_code").notNull().default("en"),
@@ -103,7 +105,7 @@ export const aiObservations = pgTable(
       .notNull()
       .references(() => aiPrompts.id, { onDelete: "cascade" }),
     engine: text("engine", {
-      enum: ["chatgpt", "gemini", "google_ai_overview"],
+      enum: ["chatgpt", "gemini", "google_ai_overview", "claude", "perplexity"],
     }).notNull(),
     // Whether the prompt names the project's own brand when the run started.
     branded: boolean("branded").notNull(),

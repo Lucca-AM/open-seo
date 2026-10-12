@@ -11,7 +11,10 @@ import { saveWebsiteSetup } from "@/server/features/projects/repositories/Projec
 import { researchWebsite } from "@/server/features/projects/services/websiteResearch";
 import { normalizeBacklinksTarget } from "@/server/lib/dataforseoBacklinksTarget";
 import { AppError } from "@/server/lib/errors";
-import { prepareWebsiteTracking } from "@/server/features/ai-visibility/services/websiteTrackingSetup";
+import {
+  prepareWebsiteTracking,
+  startWebsiteTrackingRun,
+} from "@/server/features/ai-visibility/services/websiteTrackingSetup";
 import {
   saveProjectWebsiteSetupSchema,
   type SaveProjectWebsiteSetup,
@@ -54,6 +57,9 @@ async function save(
   input: SaveProjectWebsiteSetup,
   customer: BillingCustomerContext,
   author: ContextAuthor,
+  // In-app onboarding runs seeded tracking once. MCP setup never spends;
+  // agents get approval before a run.
+  { runSeededTracking = false } = {},
 ) {
   const accepted = saveProjectWebsiteSetupSchema.parse(input);
   const project = await requireProject(customer, accepted.projectId);
@@ -85,6 +91,8 @@ async function save(
   ];
   const tracking = await prepareWebsiteTracking(accepted, project);
   await saveWebsiteSetup(customer.organizationId, accepted, author, tracking);
+  if (tracking && runSeededTracking)
+    await startWebsiteTrackingRun(accepted.projectId, customer);
   return requireProject(customer, accepted.projectId);
 }
 export const ProjectWebsiteService = { research, save };

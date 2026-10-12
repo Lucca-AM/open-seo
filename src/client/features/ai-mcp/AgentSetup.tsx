@@ -7,11 +7,11 @@ import { WizardFooter } from "@/client/features/onboarding/WizardFooter";
 import { Button } from "@/client/components/ui/button";
 
 export function AgentSetup({
-  onComplete,
+  onNext,
   onBack,
   disabled = false,
 }: {
-  onComplete: () => void;
+  onNext: () => void;
   onBack: () => void;
   disabled?: boolean;
 }) {
@@ -41,9 +41,9 @@ export function AgentSetup({
               type="button"
               variant="ghost"
               className="h-8 gap-2 px-3 text-xs font-semibold"
-              onClick={onComplete}
+              onClick={onNext}
             >
-              Finish <ArrowRight className="size-4" />
+              Continue <ArrowRight className="size-4" />
             </Button>
           }
         />

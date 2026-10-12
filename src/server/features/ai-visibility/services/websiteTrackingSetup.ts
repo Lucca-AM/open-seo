@@ -5,8 +5,10 @@ import { aiEnginesWithoutLocation } from "@/shared/ai-visibility";
 import { DEFAULT_LOCATION_CODE } from "@/shared/keyword-locations";
 import type { SaveProjectWebsiteSetup } from "@/types/schemas/projectWebsite";
 import { AppError } from "@/server/lib/errors";
+import type { BillingCustomerContext } from "@/server/billing/subscription";
+import { startRun } from "./aiVisibilityRuns";
 
-/** Seeds paused tracking from website setup's first three suggested topics. */
+/** Seeds weekly tracking from website setup's first three suggested topics. */
 export async function prepareWebsiteTracking(
   input: Pick<SaveProjectWebsiteSetup, "projectId" | "suggestedTopics">,
   market: { locationCode: number; languageCode: string },
@@ -50,4 +52,23 @@ export async function prepareWebsiteTracking(
     patch: { engines: ["chatgpt"], prompts },
     now: new Date().toISOString(),
   }).rows;
+}
+
+/**
+ * In-app onboarding collects the seeded prompts once, so Prompt Tracking
+ * opens on a run in progress rather than an empty tracker. The run is the
+ * tracker's baseline; collection checks credits before paid work. Setup is
+ * already saved, so a run that cannot start leaves the prompts ready to run.
+ */
+export async function startWebsiteTrackingRun(
+  projectId: string,
+  billing: BillingCustomerContext,
+) {
+  const config = await repo.getConfiguration(projectId);
+  if (!config) return;
+  try {
+    await startRun(config, "baseline", billing);
+  } catch (error) {
+    console.warn(`[ai-visibility] ${projectId} onboarding run:`, error);
+  }
 }

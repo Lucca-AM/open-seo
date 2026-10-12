@@ -1,8 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  runAiVisibilityCheck,
+  getAiVisibilityTracker,
   saveAiVisibilityTracker,
+  setAiVisibilitySchedule,
 } from "@/serverFunctions/ai-visibility";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
 import type { AiRun, AiTrackerState } from "@/shared/ai-visibility";
@@ -18,31 +19,35 @@ export function useTrackerSetupSave({
   return useMutation({
     mutationFn: async ({
       accepted,
-      runNow,
+      scheduleWeekly,
     }: {
       accepted: TrackerSetupReviewData;
-      runNow: boolean;
+      scheduleWeekly: boolean;
     }) => {
       const result = await saveAiVisibilityTracker({
         data: { projectId, ...accepted.patch },
       });
-      if (!runNow) return { state: result.state };
+      if (!scheduleWeekly) return { state: result.state };
       try {
-        // The server refuses the run if its cost rose above the reviewed estimate.
-        const run = await runAiVisibilityCheck({
-          data: { projectId, maxCostUsd: accepted.estimate.costUsd },
+        // A first schedule also collects a baseline now.
+        const scheduled = await setAiVisibilitySchedule({
+          data: { projectId, enabled: true, scheduleInterval: "weekly" },
         });
-        return { state: result.state, run };
-      } catch (runError) {
-        // Keep the successful save visible even if collection could not start.
-        return { state: result.state, runError };
+        return { state: scheduled.state, run: scheduled.run ?? undefined };
+      } catch (scheduleError) {
+        // The schedule is saved before its first check starts, so a failed
+        // check can leave tracking on. Show what the server kept.
+        const state = await getAiVisibilityTracker({
+          data: { projectId },
+        }).catch(() => result.state);
+        return { state, scheduleError };
       }
     },
     onSuccess: (result) => {
       onSaved(result.state, result.run);
-      if (result.runError)
+      if (result.scheduleError)
         toast.error(
-          `Tracking saved. We couldn't confirm the run started. Check its status before trying again. ${getStandardErrorMessage(result.runError)}`,
+          `${result.state.tracker?.enabled ? "Weekly tracking is on, but the first check couldn't start." : "Prompts saved. We couldn't start weekly tracking."} ${getStandardErrorMessage(result.scheduleError)}`,
         );
     },
   });
