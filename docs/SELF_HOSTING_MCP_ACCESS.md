@@ -59,6 +59,40 @@ The first returns the registration endpoint the client uses; the second should
 name `/mcp` as the resource and your team as the authorization server. If either
 is missing, Managed OAuth is not on.
 
+## TEAM_DOMAIN has to name your real team
+
+This one cost several days, so it goes above the subtler settings.
+
+`TEAM_DOMAIN` is where the Worker fetches Access's signing keys, at
+`<team>/cdn-cgi/access/certs`. It must be your team's own domain:
+
+```text
+TEAM_DOMAIN=https://<team>.cloudflareaccess.com
+```
+
+An account can have more than one team. Cloudflare auto-creates one named after
+the workers.dev subdomain, and that team has no Access applications, so its
+certs endpoint 404s. Point `TEAM_DOMAIN` at it and every token fails to verify
+even though Access itself is working, sign-in succeeds, and nothing in the
+Access dashboard looks wrong.
+
+The symptom in the Worker log is:
+
+```text
+Cloudflare Access token verification failed: JOSEError: Expected 200 OK from the JSON Web Key Set HTTP response
+```
+
+`accessTokenErrors.ts` now maps that to `AUTH_CONFIG_MISSING` naming
+`TEAM_DOMAIN`, rather than letting it read as an expired session and sending
+the operator round the sign-in loop forever. Check it the direct way:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<team>.cloudflareaccess.com/cdn-cgi/access/certs
+```
+
+200 is the only acceptable answer. A changed secret only reaches the Worker on
+the next deploy.
+
 ## POLICY_AUD has to match the hostname the client uses
 
 Access applications each have their own audience tag, and the Worker validates
