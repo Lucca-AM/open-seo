@@ -101,7 +101,6 @@ export function DashboardPage({
           projectId={projectId}
           connected={gscConnected}
           siteUrl={activation.gsc.siteUrl}
-          compact
         />
       ),
     },

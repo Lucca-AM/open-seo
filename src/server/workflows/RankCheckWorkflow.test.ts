@@ -76,7 +76,7 @@ const payload = {
   domain: "example.com",
   locationCode: 2840,
   languageCode: "en",
-  devices: "desktop" as const,
+  devices: "desktop" as "desktop" | "mobile" | "both",
   serpDepth: 10,
   trigger: "manual" as const,
 };
@@ -174,5 +174,26 @@ describe("rank check finalization", () => {
       }),
     );
     expect(mocks.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it("reports a run that missed a whole device as partial", async () => {
+    mocks.getSnapshotsForRun.mockResolvedValue(
+      keywords(3).map((kw) => ({
+        trackingKeywordId: kw.id,
+        device: "desktop",
+      })),
+    );
+
+    await runWorkflow({ devices: "both" });
+
+    expect(mocks.updateRun).toHaveBeenCalledWith(
+      "run_1",
+      expect.objectContaining({
+        status: "completed",
+        keywordsChecked: 3,
+        errorMessage:
+          "Checked 3 of 3 desktop and 0 of 3 mobile keyword(s): Invalid Field: 'location_name'.",
+      }),
+    );
   });
 });

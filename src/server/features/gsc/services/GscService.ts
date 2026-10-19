@@ -42,6 +42,7 @@ type GscSiteListResult = {
     email: string | null;
     requiresReconnect: boolean;
     propertiesUnavailable: boolean;
+    apiDisabled: boolean;
     sites: GscSite[];
   }>;
 };
@@ -114,10 +115,15 @@ async function listSitesForUserWithGrantStatus(
           email,
           requiresReconnect: false,
           propertiesUnavailable: false,
+          apiDisabled: false,
           sites,
         };
       } catch (error) {
-        if (!isExpectedGrantFailure(error)) {
+        // A disabled API is a self-host setup fault, not a dead grant:
+        // reconnecting can't fix it, so log it and show the setup message.
+        const apiDisabled = error instanceof GscApiError && error.apiDisabled;
+        const requiresReconnect = isExpectedGrantFailure(error) && !apiDisabled;
+        if (!requiresReconnect) {
           console.error(
             "Failed to list Search Console sites for account",
             grant.accountId,
@@ -127,8 +133,9 @@ async function listSitesForUserWithGrantStatus(
         return {
           accountId: grant.accountId,
           email: null,
-          requiresReconnect: isExpectedGrantFailure(error),
-          propertiesUnavailable: !isExpectedGrantFailure(error),
+          requiresReconnect,
+          propertiesUnavailable: !requiresReconnect,
+          apiDisabled,
           sites: [],
         };
       }

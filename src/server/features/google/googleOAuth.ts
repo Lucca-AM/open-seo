@@ -8,12 +8,20 @@ import { resolveUserContextFromHeaders } from "@/middleware/ensure-user/resolve"
 import { AppError } from "@/server/lib/errors";
 import { responseForAppError } from "@/server/lib/http-errors";
 import { getPublicOrigin } from "@/server/mcp/public-origin";
-import { GA4_OAUTH_PROVIDER_ID, GA4_OAUTH_SCOPES } from "@/shared/ga4";
+import {
+  GA4_DATA_SCOPE,
+  GA4_OAUTH_PROVIDER_ID,
+  GA4_OAUTH_SCOPES,
+} from "@/shared/ga4";
 import {
   GOOGLE_LINK_ERROR_PARAM,
   type GoogleLinkProvider,
 } from "@/shared/google-link";
-import { GSC_OAUTH_PROVIDER_ID, GSC_OAUTH_SCOPES } from "@/shared/gsc";
+import {
+  GSC_DATA_SCOPE,
+  GSC_OAUTH_PROVIDER_ID,
+  GSC_OAUTH_SCOPES,
+} from "@/shared/gsc";
 import {
   getGoogleOAuthClientConfig,
   hasGoogleOAuthConfig,
@@ -51,6 +59,8 @@ export type GoogleOAuthIntegration = {
   displayName: string;
   callbackPath: `/${string}`;
   scopes: readonly string[];
+  /** The data permission the integration can't work without. */
+  requiredScope: string;
 };
 
 export const GSC_INTEGRATION: GoogleOAuthIntegration = {
@@ -59,6 +69,7 @@ export const GSC_INTEGRATION: GoogleOAuthIntegration = {
   displayName: "Search Console",
   callbackPath: "/api/gsc/oauth/callback",
   scopes: GSC_OAUTH_SCOPES,
+  requiredScope: GSC_DATA_SCOPE,
 };
 
 export const GA4_INTEGRATION: GoogleOAuthIntegration = {
@@ -67,6 +78,7 @@ export const GA4_INTEGRATION: GoogleOAuthIntegration = {
   displayName: "Google Analytics",
   callbackPath: "/api/ga4/oauth/callback",
   scopes: GA4_OAUTH_SCOPES,
+  requiredScope: GA4_DATA_SCOPE,
 };
 
 const googleTokenResponseSchema = z.object({
@@ -279,6 +291,16 @@ async function handleGoogleOAuthCallback(input: {
     return fail("oauth_code_verification_failed");
   }
   if (!tokens) return fail("oauth_code_verification_failed");
+  // Google's consent screen lets the user approve sign-in while leaving the
+  // Search Console or Analytics box unchecked. That grant gets a 403 on every
+  // API call, so send them back to check it rather than saving it. An omitted
+  // scope means everything requested was granted.
+  if (
+    tokens.scope &&
+    !tokens.scope.split(/\s+/).includes(input.integration.requiredScope)
+  ) {
+    return fail("scope_not_granted");
+  }
   let googleAccountId: string;
   try {
     googleAccountId = await getGoogleAccountId(

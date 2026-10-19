@@ -112,7 +112,10 @@ async function checkBatchLive(
     const reason: unknown = outcome.reason;
     const code = reason instanceof AppError ? reason.code : "UNKNOWN";
     const message = reason instanceof Error ? reason.message : String(reason);
-    firstError ??= message;
+    // Store the bare code so the app shows its provider-unavailable copy;
+    // DataForSEO's raw outage text ("Internal Server Error.") reads like our
+    // server broke.
+    firstError ??= code === "UPSTREAM_UNAVAILABLE" ? code : message;
     // DataForSEO erring on its own side is a provider flake, not our bug: the
     // keyword just misses this run and finalize reports it to the user. Every
     // other rejection (no credits, bad API key) is ours and stays at error.
@@ -138,31 +141,87 @@ async function checkBatchLive(
  * Snapshots are written incrementally after each batch so partial results
  * survive batch failures. ~6s per keyword batch.
  * Each batch is billed with one credit hold and one settle (checkBatchLive).
+ * A failed batch step doesn't stop the run. Afterwards, every keyword/device
+ * pair still without a snapshot goes through the task queue (runQueuedCheck),
+ * which retries timeouts and in-band task errors at queue price. Failed live
+ * calls aren't billed, so the retry stays within the live estimate the user
+ * approved. Exception: a step that died after its calls were metered gets
+ * billed again at queue price. Returns the queue stats, or null when nothing
+ * was missing.
  */
 export async function runLiveCheck(
   step: WorkflowStep,
   ctx: CheckContext,
-): Promise<void> {
+): Promise<QueuedCheckStats | null> {
   for (let i = 0; i < ctx.keywords.length; i += KEYWORDS_PER_BATCH) {
     const keywordBatch = ctx.keywords.slice(i, i + KEYWORDS_PER_BATCH);
     const batchTasks = expandToTaskInputs(keywordBatch, ctx.devices);
     const batchIndex = Math.floor(i / KEYWORDS_PER_BATCH);
     const keywordsChecked = i + keywordBatch.length;
 
-    await pgStep(
-      step,
-      `live-batch-${batchIndex}`,
-      SINGLE_ATTEMPT_STEP_CONFIG,
-      async () => {
-        const written = await checkBatchLive(ctx, batchTasks);
-        // Progress for the UI; finalize recounts from the DB anyway.
-        await RankTrackingRepository.updateRun(ctx.runId, {
-          keywordsChecked,
-        });
-        return written;
-      },
-    );
+    try {
+      await pgStep(
+        step,
+        `live-batch-${batchIndex}`,
+        SINGLE_ATTEMPT_STEP_CONFIG,
+        async () => {
+          const written = await checkBatchLive(ctx, batchTasks);
+          // Progress for the UI; finalize recounts from the DB anyway.
+          await RankTrackingRepository.updateRun(ctx.runId, {
+            keywordsChecked,
+          });
+          return written;
+        },
+      );
+    } catch (error) {
+      // Earlier batches are already saved; this batch's pairs go to the
+      // queue below.
+      console.warn(
+        `[rank-check] ${ctx.runId} live-batch-${batchIndex} failed:`,
+        error,
+      );
+    }
   }
+
+  // Diff against the DB rather than batch return values, so pairs from a
+  // batch step that threw are included too.
+  const missing = await pgStep(
+    step,
+    "find-missing",
+    COLLECT_STEP_CONFIG,
+    async () => {
+      const snapshots = await RankTrackingRepository.getSnapshotsForRun(
+        ctx.runId,
+      );
+      const checked = new Set(
+        snapshots.map((s) => `${s.trackingKeywordId}:${s.device}`),
+      );
+      // Live progress counts attempted keywords; reset it to the real count
+      // while the queue runs.
+      await RankTrackingRepository.updateRun(ctx.runId, {
+        keywordsChecked: new Set(snapshots.map((s) => s.trackingKeywordId))
+          .size,
+      });
+      return expandToTaskInputs(ctx.keywords, ctx.devices).filter(
+        (t) => !checked.has(`${t.keywordId}:${t.device}`),
+      );
+    },
+  );
+  if (missing.length === 0) return null;
+
+  console.log(
+    `[rank-check] ${ctx.runId} queue fallback for ${missing.length} task(s)`,
+  );
+  // No live fallback here: these pairs already had their live attempt, and a
+  // second one could take the run past the credits the user approved.
+  // A "not found" from the queue isn't saved either: queued SERPs often miss a
+  // domain the live endpoint finds, so the pair stays "Not checked" and keeps
+  // its previous position instead of reading as lost.
+  return runQueuedCheck(step, ctx, {
+    taskInputs: missing,
+    liveFallback: false,
+    saveNotFound: false,
+  });
 }
 
 // Poll cadence for queued tasks. Standard-priority tasks complete in ~5
@@ -210,11 +269,11 @@ interface CollectRoundOutcome {
 async function collectQueuedRound(
   ctx: CheckContext,
   tasks: PostedRankCheckTask[],
+  saveNotFound: boolean,
 ): Promise<CollectRoundOutcome> {
   const completed: RankCheckResultWithDevice[] = [];
   const stillPending: PostedRankCheckTask[] = [];
   const failed: PostedRankCheckTask[] = [];
-  let firstError: string | null = null;
 
   for (let i = 0; i < tasks.length; i += TASK_GET_CONCURRENCY) {
     const chunk = tasks.slice(i, i + TASK_GET_CONCURRENCY);
@@ -243,17 +302,15 @@ async function collectQueuedRound(
         console.warn(
           `[rank-check] ${ctx.runId} task ${task.taskId} failed: ${result.value.message}`,
         );
-        firstError ??= result.value.message;
+        // No run error here: a live call records it. That is the live
+        // fallback, or for a manual retry, the live attempt before the queue.
         failed.push(task);
-      } else {
+      } else if (saveNotFound || result.value.result.position !== null) {
         completed.push({ ...result.value.result, device: task.device });
       }
     });
   }
 
-  if (firstError) {
-    await RankTrackingRepository.setRunErrorIfEmpty(ctx.runId, firstError);
-  }
   if (completed.length > 0) {
     await RankTrackingRepository.insertSnapshots(
       mapResultsToSnapshotRows(ctx.runId, completed),
@@ -284,18 +341,27 @@ export interface QueuedCheckStats {
 
 /**
  * Check keywords via DataForSEO's standard task queue (~30% of live cost).
- * Posts every keyword/device pair as a queued task, then polls task_get for
- * ~15 minutes, writing snapshots incrementally as tasks complete. Anything
- * still unfinished after the polling window — plus tasks DataForSEO rejected
- * or failed — gets one shot at the live endpoint so a run never hangs on a
- * stuck queue. Billing happens at task_post (and per live-fallback batch).
+ * Posts every keyword/device pair (or just taskInputs) as a queued task, then
+ * polls task_get for ~15 minutes, writing snapshots incrementally as tasks
+ * complete. Anything still unfinished after the polling window — plus tasks
+ * DataForSEO rejected or failed — gets one shot at the live endpoint so a run
+ * never hangs on a stuck queue, unless `liveFallback` is false. With
+ * `saveNotFound` false, a result without the domain isn't saved. Billing
+ * happens at task_post (and per live-fallback batch).
  */
 export async function runQueuedCheck(
   step: WorkflowStep,
   ctx: CheckContext,
+  {
+    taskInputs = expandToTaskInputs(ctx.keywords, ctx.devices),
+    liveFallback = true,
+    saveNotFound = true,
+  }: {
+    taskInputs?: RankCheckTaskInput[];
+    liveFallback?: boolean;
+    saveNotFound?: boolean;
+  } = {},
 ): Promise<QueuedCheckStats> {
-  const taskInputs = expandToTaskInputs(ctx.keywords, ctx.devices);
-
   // Post all tasks to the queue, <=100 per request, one metered step each.
   // A failed chunk must not abort the run — earlier chunks were already
   // charged at DataForSEO, so their results have to be collected. The failed
@@ -369,7 +435,7 @@ export async function runQueuedCheck(
         step,
         `collect-${round}`,
         COLLECT_STEP_CONFIG,
-        () => collectQueuedRound(ctx, batch),
+        () => collectQueuedRound(ctx, batch, saveNotFound),
       );
     } catch (error) {
       console.warn(`[rank-check] ${ctx.runId} collect-${round} failed:`, error);
@@ -387,8 +453,14 @@ export async function runQueuedCheck(
   // Progress isn't updated here; finalize recounts keywordsChecked from the
   // DB.
   const stragglers: RankCheckTaskInput[] = [...fallback, ...pending];
-  stats.fallbackTasks = stragglers.length;
   if (stragglers.length === 0) return stats;
+  if (!liveFallback) {
+    console.log(
+      `[rank-check] ${ctx.runId} ${stragglers.length} task(s) left unchecked, no live fallback`,
+    );
+    return stats;
+  }
+  stats.fallbackTasks = stragglers.length;
 
   console.log(
     `[rank-check] ${ctx.runId} live fallback for ${stragglers.length} task(s)`,

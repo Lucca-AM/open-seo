@@ -67,6 +67,24 @@ beforeAll(async () => {
       pinned_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE rank_check_runs (
+      id TEXT PRIMARY KEY,
+      config_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      keywords_total INTEGER NOT NULL DEFAULT 0,
+      is_subset_run INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT NOT NULL
+    );
+    CREATE TABLE rank_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      tracking_keyword_id TEXT NOT NULL,
+      keyword TEXT NOT NULL,
+      device TEXT NOT NULL,
+      position INTEGER,
+      checked_at TEXT NOT NULL
+    );
   `);
 
   ({ RankTrackingRepository } = await import("./RankTrackingRepository"));
@@ -78,6 +96,8 @@ afterAll(() => {
 
 beforeEach(async () => {
   await client.executeMultiple(`
+    DELETE FROM rank_snapshots;
+    DELETE FROM rank_check_runs;
     DELETE FROM rank_tracking_keywords;
     DELETE FROM rank_tracking_configs;
     DELETE FROM projects;
@@ -311,5 +331,43 @@ describe("setKeywordsPinned", () => {
 
     await RankTrackingRepository.setKeywordsPinned(["kw1"], "cfg_a", false);
     expect(await pinnedIds()).toEqual([]);
+  });
+});
+
+function daysAgo(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
+}
+
+describe("getConfigTrend", () => {
+  it("keeps every row of a run inside the range and drops a run that started before it", async () => {
+    // run_b started before the 30-day cutoff, but one snapshot is after it.
+    for (const [runId, startedAt, snapshotTimes] of [
+      ["run_a", daysAgo(10), [daysAgo(10), daysAgo(10)]],
+      ["run_b", daysAgo(30.01), [daysAgo(30.01), daysAgo(29.99)]],
+    ] as const) {
+      await client.execute({
+        sql: "INSERT INTO rank_check_runs (id, config_id, project_id, status, keywords_total, started_at) VALUES (?, 'cfg_a', 'proj_1', 'completed', 2, ?)",
+        args: [runId, startedAt],
+      });
+      for (const [index, checkedAt] of snapshotTimes.entries()) {
+        await client.execute({
+          sql: "INSERT INTO rank_snapshots (run_id, tracking_keyword_id, keyword, device, position, checked_at) VALUES (?, ?, 'kw', 'desktop', 5, ?)",
+          args: [runId, `kw${index}`, checkedAt],
+        });
+      }
+    }
+
+    const trend = await RankTrackingRepository.getConfigTrend(
+      "cfg_a",
+      "desktop",
+      30,
+    );
+
+    expect(trend).toMatchObject([
+      { runId: "run_a", keywordsTotal: 2, total: 2 },
+    ]);
   });
 });
