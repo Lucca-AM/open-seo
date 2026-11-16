@@ -4,11 +4,19 @@ import { Sparkles } from "lucide-react";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { Card, CardContent } from "@/client/components/ui/card";
+import { Field, FieldLabel } from "@/client/components/ui/field";
+import { Textarea } from "@/client/components/ui/textarea";
+import { InsufficientCreditsError } from "@/client/features/billing/InsufficientCreditsError";
+import { getErrorCode } from "@/client/lib/error-messages";
+import { isEveryAppClientAuthMode } from "@/lib/auth-mode";
 import { projectsQueryOptions } from "@/client/features/projects/projectQueries";
 import { WebsiteResearchProgress } from "@/client/features/projects/WebsiteResearchProgress";
+import { OpenRouterKeyGate } from "./OpenRouterKeyGate";
 import { WebsiteSetupReview } from "@/client/features/projects/WebsiteSetupReview";
 import { startAiResearchSetup } from "@/serverFunctions/ai-visibility";
+import { updateProjectContext } from "@/serverFunctions/projectContext";
 import { saveProjectWebsiteSetup } from "@/serverFunctions/projectWebsite";
+import { PROSE_MAX_CHARS } from "@/types/schemas/projectContext";
 import type { SaveProjectWebsiteSetup } from "@/types/schemas/projectWebsite";
 import { SkeletonPageContent } from "@/client/components/SkeletonPresets";
 import {
@@ -21,12 +29,12 @@ import {
 } from "./shared";
 
 /**
- * AI visibility needs research keywords. A project with a website but no
- * keywords confirms the spend here, then the server runs setup once: website
- * research and the onboarding competitor review when the overview or
- * competitors are missing, otherwise one keyword and prompt generation. The
- * run lives on the server, so leaving or reloading the page finds it again.
- * Both paths end on the page that started setup.
+ * AI visibility needs a tracker. A project with a website but none confirms
+ * the spend here, then the server runs setup once: website research and the
+ * onboarding competitor review when the overview or competitors are missing,
+ * otherwise one keyword and prompt generation, reusing keywords already saved.
+ * The run lives on the server, so leaving or reloading the page finds it
+ * again. Both paths end on the page that started setup.
  */
 export function AiResearchSetupGate({
   projectId,
@@ -51,6 +59,25 @@ export function AiResearchSetupGate({
   const start = useMutation({
     mutationFn: () => startAiResearchSetup({ data: { projectId } }),
     onSuccess: (data) => queryClient.setQueryData(setupOptions.queryKey, data),
+  });
+  // A site we can't read, usually because of bot protection, leaves the
+  // overview to the user. With one saved, setup no longer reads the site.
+  const [overview, setOverview] = useState("");
+  const saveOverview = useMutation({
+    mutationFn: () =>
+      updateProjectContext({
+        data: {
+          projectId,
+          updates: [{ section: "business_overview", content: overview.trim() }],
+        },
+      }),
+    onSuccess: () => {
+      // Setup can still fail, so the saved overview mustn't wait for it.
+      void queryClient.invalidateQueries({
+        queryKey: ["projectContext", projectId],
+      });
+      start.mutate();
+    },
   });
   // Setup writes the tracker, research keywords and a first run. Load what the
   // AI visibility pages read before setup reads ready, so the page that
@@ -110,67 +137,109 @@ export function AiResearchSetupGate({
       />
     );
   if (status === "ready" && !finishing) return children;
-  if (setup.data.review)
-    return (
-      <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
-        <WebsiteSetupReview
-          projectId={projectId}
-          research={setup.data.review}
-          saving={save.isPending}
-          error={save.isError}
-          onSave={(accepted) => save.mutate(accepted)}
-        />
-      </div>
-    );
-  if (status === "running" || start.isPending || finishing)
-    return (
-      <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
-        <WebsiteResearchProgress
-          missingOverview={setup.data.missingOverview}
-          missingCompetitors={setup.data.missingCompetitors}
-          note="You can leave this page; setup keeps running."
-        />
-      </div>
-    );
-  const failed = status === "failed" || start.isError;
-  const unreadable =
-    !start.isError && setup.data.failure === "website_unreadable";
+  const data = setup.data;
+  // Saved results open without an OpenRouter key; only setup needs one.
   return (
-    <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
-      <Card className="w-full max-w-2xl py-6 md:py-8">
-        <CardContent className="space-y-6 px-6 md:px-8">
-          <div>
-            <div className="mb-4 flex size-10 items-center justify-center rounded-lg border border-border bg-muted">
-              <Sparkles className="size-5" />
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Set up AI visibility
-            </h1>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              We’ll research your brand and find the most relevant topics to
-              monitor.
-            </p>
-          </div>
-          {failed && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                {unreadable
-                  ? "We couldn’t read this website. Check the URL in project settings, then try again."
-                  : "We couldn’t finish setting up AI visibility. Check your available usage credits, then try again."}
-              </AlertDescription>
-            </Alert>
-          )}
-          <div className="space-y-3">
-            <Button size="lg" className="w-full" onClick={() => start.mutate()}>
-              {failed ? "Try again" : "Start research"}
-            </Button>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Research and a first run of your prompts use a small amount of
-              usage credits.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <OpenRouterKeyGate projectId={projectId}>{renderSetup()}</OpenRouterKeyGate>
   );
+
+  function renderSetup() {
+    if (data.review)
+      return (
+        <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
+          <WebsiteSetupReview
+            projectId={projectId}
+            research={data.review}
+            saving={save.isPending}
+            error={save.isError}
+            onSave={(accepted) => save.mutate(accepted)}
+          />
+        </div>
+      );
+    if (status === "running" || start.isPending || finishing)
+      return (
+        <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
+          <WebsiteResearchProgress
+            missingOverview={data.missingOverview}
+            missingCompetitors={data.missingCompetitors}
+            note="You can leave this page; setup keeps running."
+          />
+        </div>
+      );
+    const failed = status === "failed" || start.isError;
+    const unreadable = !start.isError && data.failure === "website_unreadable";
+    return (
+      <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
+        <Card className="w-full max-w-2xl py-6 md:py-8">
+          <CardContent className="space-y-6 px-6 md:px-8">
+            <div>
+              <div className="mb-4 flex size-10 items-center justify-center rounded-lg border border-border bg-muted">
+                <Sparkles className="size-5" />
+              </div>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Set up AI visibility
+              </h1>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                We’ll research your brand and find the most relevant topics to
+                monitor.
+              </p>
+            </div>
+            {getErrorCode(start.error) === "INSUFFICIENT_CREDITS" ? (
+              <InsufficientCreditsError title="We couldn’t set up AI visibility" />
+            ) : (
+              failed && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    {unreadable
+                      ? "We couldn’t read this website. Its bot protection may be blocking us. Describe your business below and try again, or check the URL in project settings."
+                      : !start.isError && data.failure === "subrequest_limit"
+                        ? "Setup needs more outgoing requests than Cloudflare Workers Free allows (50). Upgrade to Workers Paid or run the Docker edition, then try again."
+                        : isEveryAppClientAuthMode()
+                          ? "We couldn’t finish setting up AI visibility. It needs DataForSEO and OpenRouter on your Every App gateway: if they aren’t set up yet, an owner or admin runs pnpm everyapp secret set DATAFORSEO_API_KEY OPENROUTER_API_KEY. Then try again."
+                          : "We couldn’t finish setting up AI visibility. Try again."}
+                  </AlertDescription>
+                </Alert>
+              )
+            )}
+            {unreadable && (
+              <Field>
+                <FieldLabel htmlFor="business-overview">
+                  What you sell, who buys it, and where
+                </FieldLabel>
+                <Textarea
+                  id="business-overview"
+                  value={overview}
+                  onChange={(event) => setOverview(event.target.value)}
+                  maxLength={PROSE_MAX_CHARS}
+                  rows={4}
+                />
+                {saveOverview.isError && (
+                  <p className="text-sm text-destructive">
+                    We couldn’t save your description. Try again.
+                  </p>
+                )}
+              </Field>
+            )}
+            <div className="space-y-3">
+              <Button
+                size="lg"
+                className="w-full"
+                pending={saveOverview.isPending}
+                onClick={() =>
+                  overview.trim() ? saveOverview.mutate() : start.mutate()
+                }
+              >
+                {failed ? "Try again" : "Start research"}
+              </Button>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {isEveryAppClientAuthMode()
+                  ? "Research and a first run of your prompts use the DataForSEO and OpenRouter keys on your Every App gateway."
+                  : "Research and a first run of your prompts use a small amount of usage credits."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 }

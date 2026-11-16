@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { createColumnHelper } from "@tanstack/react-table";
 import { ExternalLink, Globe } from "lucide-react";
 import { ErrorState } from "@/client/components/ErrorState";
+import { GetCreditsButton } from "@/client/features/billing/InsufficientCreditsError";
 import { ExportMenu } from "@/client/components/ExportMenu";
 import { Button } from "@/client/components/ui/button";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
@@ -62,6 +63,7 @@ export function SerpAnalysisCard({
   loadingMore,
   canLoadMore,
   error,
+  outOfCredits,
   onRetry,
   retrying,
   deepFetchFailed,
@@ -77,6 +79,7 @@ export function SerpAnalysisCard({
   /** Paging past the loaded results can buy a deeper snapshot. */
   canLoadMore: boolean;
   error?: string | null;
+  outOfCredits: boolean;
   onRetry?: () => void;
   retrying: boolean;
   /** The failure was the deeper crawl, so retrying restores the shallow one. */
@@ -93,15 +96,30 @@ export function SerpAnalysisCard({
   const table = useDataTable({ data: pageItems, columns });
   const hasItems = !loading && items.length > 0;
 
-  const retryButton = onRetry ? (
-    <Button variant="outline" size="sm" pending={retrying} onClick={onRetry}>
-      {deepFetchFailed ? "Show top 20" : "Retry"}
-    </Button>
-  ) : null;
+  // Out of credits, a retry can't help, but "Show top results" still brings
+  // back the results already paid for.
+  const errorAction = (
+    <>
+      {outOfCredits && <GetCreditsButton />}
+      {onRetry && (deepFetchFailed || !outOfCredits) && (
+        <Button
+          variant="outline"
+          size="sm"
+          pending={retrying}
+          onClick={onRetry}
+        >
+          {deepFetchFailed ? "Show top results" : "Retry"}
+        </Button>
+      )}
+    </>
+  );
 
   return (
     <DataTable
       table={table}
+      // Fills what the column has left, and its rows scroll inside.
+      className="flex min-h-0 flex-1 flex-col"
+      scrollClassName="min-h-0 flex-1 overflow-y-auto"
       isLoading={loading || (pageItems.length === 0 && loadingMore)}
       toolbar={
         <>
@@ -142,6 +160,10 @@ export function SerpAnalysisCard({
                 <span className="text-xs text-muted-foreground">
                   {items.length} organic results
                 </span>
+              ) : loading ? (
+                <span className="text-xs text-muted-foreground" role="status">
+                  Fetching live results… This can take up to a minute.
+                </span>
               ) : null}
             </div>
           </DataTableToolbar>
@@ -150,7 +172,7 @@ export function SerpAnalysisCard({
               <ErrorState
                 variant="inline"
                 message={error}
-                action={retryButton}
+                action={errorAction}
               />
             </div>
           ) : null}
@@ -158,7 +180,7 @@ export function SerpAnalysisCard({
       }
       empty={
         error
-          ? { kind: "error", title: error, action: retryButton }
+          ? { kind: "error", title: error, action: errorAction }
           : {
               title: "No SERP details available for this keyword yet.",
               description: keyword

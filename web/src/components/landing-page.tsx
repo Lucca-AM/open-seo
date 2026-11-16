@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AddToAgentLinks } from "@/components/add-to-agent-links";
 import { NewsletterSignup } from "@/components/newsletter-signup";
 import { ProductHuntLaurel } from "@/components/product-hunt-laurel";
 import { SiteFooter } from "@/components/site-footer";
@@ -228,9 +229,10 @@ function Hero() {
           </a>
           <h1
             className="itc-display-xl itc-hero-title"
-            style={{ maxWidth: 1180, margin: "0 auto" }}
+            style={{ maxWidth: 600, margin: "0 auto" }}
           >
-            Grow your business with SEO
+            <span style={{ display: "inline-block" }}>Grow your business</span>{" "}
+            with SEO
           </h1>
           <p
             className="itc-subhead itc-muted itc-hero-subtitle"
@@ -266,7 +268,7 @@ function Hero() {
 // ─── Testimonial (true-black inverse strip) ──────────────────────────
 
 export function Testimonials({
-  title = "Trusted by 3,000+ entrepreneurs",
+  title = "Trusted by 90,000+ entrepreneurs",
   items = TESTIMONIALS,
 }: {
   title?: string;
@@ -557,8 +559,11 @@ function McpSection() {
             <h2 className="itc-display-lg">Get superpowers with the MCP</h2>
             <SkillsList />
             <AgentIcons />
-            <div className="itc-mcp-ctas">
-              <CopySetupPrompt />
+            <div className="itc-mcp-ctas itc-mcp-ctas-stack">
+              <div className="itc-mcp-actions">
+                <CopySetupPrompt />
+                <AddToAgentLinks className="itc-btn itc-btn-secondary" />
+              </div>
               <a href="/docs/agent-setup" className="itc-textlink">
                 Setup guide <IconArrowRight size={15} className="itc-arrow" />
               </a>
@@ -1082,7 +1087,8 @@ export function OpenSourceSection() {
             Star on GitHub
           </a>
           <a href="/open-source-seo" className="itc-textlink">
-            Why Open Source? <IconArrowRight size={15} className="itc-arrow" />
+            The open source alternative to Semrush and Ahrefs{" "}
+            <IconArrowRight size={15} className="itc-arrow" />
           </a>
         </div>
       </Container>

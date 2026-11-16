@@ -1,56 +1,54 @@
-import { waitUntil } from "cloudflare:workers";
 import {
   AuthorizationError,
   OAuthError,
   OAuthProvider,
+  authorizationErrorRedirect,
   type AuthRequest,
   type OAuthHelpers,
-  type OAuthProviderOptions,
 } from "@cloudflare/workers-oauth-provider";
 import { z } from "zod";
 import { getHostedBaseUrl } from "@/lib/auth";
+import { OAUTH_AUTHORIZE_PATH } from "@/lib/auth-redirect";
 import {
   getMcpResource,
   MCP_OAUTH_SCOPES,
   MCP_SCOPE,
 } from "@/lib/oauth-resource";
 import { asAppError } from "@/server/lib/errors";
-import { recordMcpAuthorized } from "@/server/features/activation/mcpActivation";
-import { captureServerEvent } from "@/server/lib/posthog";
+import {
+  buildAuthorizeRequestFromConsentQuery,
+  completeMcpGrant,
+  csrfProtected,
+  getGrantedMcpScopes,
+  getRelativeRequestTarget,
+  jsonResponse,
+  OAUTH_AUTHORIZATION_PARAM_NAMES,
+  resolveContextForConsent,
+} from "@/server/mcp/oauth-grant";
+import { handleOAuthGuestRequest } from "@/server/mcp/oauth-guest";
+import { checkGuestEligibility } from "@/server/auth/guest-accounts";
 import {
   createWorkersOAuthMcpProps,
   MCP_AUTH_CONTEXT_PROP,
   MCP_ROUTE,
   workersOAuthMcpPropsSchema,
 } from "@/server/mcp/context";
+import { handleOAuthError } from "@/server/mcp/oauth-errors";
+import { asksForChatGptSignIn } from "@/shared/chatgpt-sign-in";
 import { normalizeClientRegistrationRequest } from "@/server/mcp/oauth-registration";
-import { getPublicOrigin } from "@/server/mcp/public-origin";
 import { resolveHostedContext } from "@/middleware/ensure-user/hosted";
 import { handleMcpApiKeyRequest } from "@/server/mcp/api-key-auth";
 
-const OAUTH_AUTHORIZE_PATH = "/api/auth/oauth2/authorize";
 const OAUTH_TOKEN_PATH = "/api/auth/oauth2/token";
 const OAUTH_REGISTER_PATH = "/api/auth/oauth2/register";
+const OAUTH_PURGE_CURSOR_KEY = "purge-cursor";
 
 const OAUTH_CONSENT_RESPONSE_PATH = "/api/oauth/consent";
-const OAUTH_AUTHORIZATION_PARAM_NAMES = [
-  "response_type",
-  "client_id",
-  "redirect_uri",
-  "scope",
-  "state",
-  "code_challenge",
-  "code_challenge_method",
-  "resource",
-] as const;
+const OAUTH_GUEST_PATH = "/api/oauth/guest";
 // Keep access tokens reasonably short-lived while allowing refresh tokens to
 // preserve MCP sessions across normal usage.
 const MCP_ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24;
 const MCP_REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
-// DCR client records expire on a fixed clock from registration (the provider
-// defaults to 90 days), and an actively refreshing client breaks with
-// invalid_client the moment its record lapses. A year keeps that cliff rare;
-// rolling 30-day refresh tokens already reap inactive clients' sessions.
 const MCP_CLIENT_REGISTRATION_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 export type OpenSeoOAuthEnv = Env & {
@@ -77,96 +75,53 @@ function getOAuthHelpers(env: OpenSeoOAuthEnv) {
   return env.OAUTH_PROVIDER;
 }
 
-function getRelativeRequestTarget(request: Request) {
-  const url = new URL(request.url);
-  return `${url.pathname}${url.search}`;
-}
-
 function redirectToSignIn(request: Request) {
   const signInUrl = new URL("/sign-in", request.url);
   signInUrl.searchParams.set("redirect", getRelativeRequestTarget(request));
   return Response.redirect(signInUrl.toString(), 302);
 }
 
-function oauthErrorRedirect(input: {
-  redirectUri: string;
-  code: string;
-  description: string;
-  state?: string;
-  issuer?: string;
-}) {
-  const redirectUrl = new URL(input.redirectUri);
-  redirectUrl.searchParams.set("error", input.code);
-  redirectUrl.searchParams.set("error_description", input.description);
-  if (input.state) redirectUrl.searchParams.set("state", input.state);
-  if (input.issuer) redirectUrl.searchParams.set("iss", input.issuer);
-  return redirectUrl.toString();
+// The /connect page runs Turnstile and posts back to OAUTH_GUEST_PATH with
+// the same authorize params.
+function redirectToGuestConnect(request: Request) {
+  const connectUrl = new URL("/connect", request.url);
+  connectUrl.search = new URL(request.url).search;
+  return Response.redirect(connectUrl.toString(), 302);
 }
 
 function authorizationErrorResponse(error: AuthorizationError) {
-  if (!error.redirectUri) {
+  if (!error.redirectTo) {
     return new Response(error.description, { status: 400 });
   }
 
-  return Response.redirect(
-    oauthErrorRedirect({
-      redirectUri: error.redirectUri,
-      code: error.code,
-      description: error.description,
-      state: error.state,
-      issuer: error.issuer,
-    }),
-    302,
-  );
+  return Response.redirect(error.redirectTo, 302);
 }
 
-function jsonResponse(body: unknown, init?: ResponseInit) {
-  const headers = new Headers(init?.headers);
-  headers.set("Content-Type", "application/json");
-
-  return new Response(JSON.stringify(body), {
-    ...init,
-    headers,
-  });
-}
-
-function logOAuthError(error: {
-  code: string;
-  description: string;
-  status: number;
-}) {
-  // 401s here are the standard OAuth discovery handshake, not failures: an
-  // unauthenticated /mcp hit returns `invalid_token` (which triggers the
-  // client's .well-known discovery), and stale client registrations draw
-  // `invalid_client` until the client re-registers. Log those at debug so
-  // they stop masquerading as errors; keep 5xx at error and everything else
-  // (bad client metadata, etc.) at warn.
-  const line = `[oauth] ${error.status} ${error.code}: ${error.description}`;
-  if (error.status === 401) {
-    console.debug(line);
-  } else if (error.status >= 500) {
-    console.error(line);
-  } else {
-    console.warn(line);
-  }
-
-  // Returning void delegates the standards-compliant body, bearer challenge,
-  // and CORS headers to workers-oauth-provider.
-}
-
-function csrfProtected(request: Request) {
-  const origin = request.headers.get("Origin");
-  return origin === getPublicOrigin(request);
-}
-
-async function getAuthorizeSessionBlocker(request: Request) {
+async function getAuthorizeSessionBlocker(
+  request: Request,
+  redirectUri: string,
+) {
   try {
     await resolveHostedContext(request.headers);
     return null;
   } catch (error) {
     const appError = asAppError(error);
     if (appError?.code === "UNAUTHENTICATED") {
-      return redirectToSignIn(request);
+      // The person chose "Continue with ChatGPT" in ChatGPT's connect window,
+      // so no guest account stands in: the sign-in page starts it for them.
+      if (asksForChatGptSignIn(request.url)) return redirectToSignIn(request);
+      // No session: an eligible browser gets a guest account instead of the
+      // sign-in page (src/server/auth/guest-accounts.ts). A failed check
+      // (database, feature flag) must never block the normal sign-in.
+      const guest = await checkGuestEligibility(request, redirectUri).catch(
+        (checkError: unknown) => {
+          console.error("mcp.guest eligibility check failed", checkError);
+          return { eligible: false } as const;
+        },
+      );
+      return guest.eligible
+        ? redirectToGuestConnect(request)
+        : redirectToSignIn(request);
     }
 
     if (appError?.code === "AUTH_CONFIG_MISSING") {
@@ -175,18 +130,6 @@ async function getAuthorizeSessionBlocker(request: Request) {
       });
     }
 
-    throw error;
-  }
-}
-
-async function resolveContextForConsent(request: Request) {
-  try {
-    return await resolveHostedContext(request.headers);
-  } catch (error) {
-    const appError = asAppError(error);
-    if (appError?.code === "UNAUTHENTICATED") {
-      return null;
-    }
     throw error;
   }
 }
@@ -204,57 +147,15 @@ function buildConsentUrl(request: Request) {
   return consentUrl;
 }
 
-function buildAuthorizeRequestFromConsentQuery(
-  request: Request,
-  query: string,
-) {
-  const authorizeUrl = new URL(OAUTH_AUTHORIZE_PATH, request.url);
-  const params = new URLSearchParams(query);
-
-  for (const key of OAUTH_AUTHORIZATION_PARAM_NAMES) {
-    for (const value of params.getAll(key)) {
-      authorizeUrl.searchParams.append(key, value);
-    }
-  }
-
-  return new Request(authorizeUrl.toString(), {
-    headers: request.headers,
-  });
-}
-
-function getGrantedMcpScopes(requestedScopes: string[]) {
-  if (requestedScopes.length === 0) {
-    return [...MCP_OAUTH_SCOPES];
-  }
-
-  const requested = new Set(requestedScopes);
-  const granted = MCP_OAUTH_SCOPES.filter((scope) => requested.has(scope));
-
-  if (!granted.includes(MCP_SCOPE)) {
-    throw new Error("The mcp scope is required");
-  }
-
-  return granted;
-}
-
-function deniedRedirect(authRequest: AuthRequest) {
-  return oauthErrorRedirect({
-    redirectUri: authRequest.redirectUri,
-    code: "access_denied",
-    description: "The user denied access",
-    state: authRequest.state,
-    issuer: authRequest.issuer,
-  });
-}
-
 async function handleOAuthAuthorizeRequest(
   request: Request,
   env: OpenSeoOAuthEnv,
 ) {
   const oauth = getOAuthHelpers(env);
 
+  let authRequest: AuthRequest;
   try {
-    await oauth.parseAuthRequest(request);
+    authRequest = await oauth.parseAuthRequest(request);
   } catch (error) {
     if (error instanceof AuthorizationError) {
       return authorizationErrorResponse(error);
@@ -262,7 +163,10 @@ async function handleOAuthAuthorizeRequest(
     throw error;
   }
 
-  const sessionBlocker = await getAuthorizeSessionBlocker(request);
+  const sessionBlocker = await getAuthorizeSessionBlocker(
+    request,
+    authRequest.redirectUri,
+  );
   if (sessionBlocker) return sessionBlocker;
 
   return Response.redirect(buildConsentUrl(request).toString(), 302);
@@ -312,7 +216,13 @@ async function handleOAuthConsentResponse(
   }
 
   if (!body.data.accept) {
-    return jsonResponse({ redirectTo: deniedRedirect(authRequest) });
+    return jsonResponse({
+      redirectTo: authorizationErrorRedirect(
+        authRequest,
+        "access_denied",
+        "The user denied access",
+      ),
+    });
   }
 
   const context = await resolveContextForConsent(request);
@@ -332,44 +242,44 @@ async function handleOAuthConsentResponse(
     );
   }
 
-  // organizationId is only the fallback context for tools with no project
-  // argument; the hosted transport re-resolves it and stamps orgScope per
-  // request, so one authorization follows the user across every organization.
-  const props = createWorkersOAuthMcpProps({
-    userId: context.userId,
-    userEmail: context.userEmail,
-    organizationId: context.organizationId,
-    baseUrl: getHostedBaseUrl(),
-    clientId: authRequest.clientId,
+  const redirectTo = await completeMcpGrant({
+    request,
+    oauth,
+    authRequest,
     scopes,
+    context,
   });
-
-  const { redirectTo } = await oauth.completeAuthorization({
-    request: authRequest,
-    userId: context.userId,
-    metadata: {
-      clientId: authRequest.clientId,
-      organizationId: context.organizationId,
-    },
-    scope: scopes,
-    props,
-  });
-
-  await recordMcpAuthorized(context.organizationId);
-
-  waitUntil(
-    captureServerEvent({
-      distinctId: context.userId,
-      event: "mcp:authorize_success",
-      organizationId: context.organizationId,
-      properties: {
-        client_id: authRequest.clientId,
-        scopes: scopes.join(" "),
-      },
-    }),
-  );
-
   return jsonResponse({ redirectTo });
+}
+
+// The provider sets OAUTH_PROVIDER on the env it hands the default handler,
+// but `import { env } from "cloudflare:workers"` is a different object, so
+// server functions (which run inside appFetch) cannot read it there. The
+// helpers are stateless wrappers over the OAUTH_KV binding, so one module-level
+// reference serves every request.
+let oauthHelpers: OAuthHelpers | undefined;
+
+export function getCapturedOAuthHelpers() {
+  if (!oauthHelpers) {
+    throw new Error("OAuth provider helpers are unavailable");
+  }
+  return oauthHelpers;
+}
+
+// What the consent screen shows about the request it approves. Parsing checks
+// the client and its redirect address the same way approving does, so the
+// screen never names an address the approval would refuse.
+export async function getConsentRequest(request: Request, query: string) {
+  const oauth = getCapturedOAuthHelpers();
+  const authRequest = await oauth.parseAuthRequest(
+    buildAuthorizeRequestFromConsentQuery(request, query),
+  );
+  const client = await oauth.lookupClient(authRequest.clientId);
+  return {
+    // Self-reported, and optional when a client registers.
+    clientName: client?.clientName,
+    redirectUri: authRequest.redirectUri,
+  };
 }
 
 function createDefaultHandler(
@@ -377,10 +287,15 @@ function createDefaultHandler(
 ): ExportedHandlerWithFetch<OpenSeoOAuthEnv> {
   return {
     async fetch(request, env) {
+      oauthHelpers = env.OAUTH_PROVIDER;
       const url = new URL(request.url);
 
       if (url.pathname === OAUTH_AUTHORIZE_PATH) {
         return handleOAuthAuthorizeRequest(request, env);
+      }
+
+      if (url.pathname === OAUTH_GUEST_PATH) {
+        return handleOAuthGuestRequest(request, getOAuthHelpers(env));
       }
 
       if (url.pathname === OAUTH_CONSENT_RESPONSE_PATH) {
@@ -401,7 +316,7 @@ const mcpApiHandler: ExportedHandlerWithFetch<OpenSeoOAuthEnv> = {
 };
 
 function createProvider(appFetch: AppFetch, resource: string) {
-  const options: OAuthProviderOptions<OpenSeoOAuthEnv> = {
+  return new OAuthProvider<OpenSeoOAuthEnv>({
     apiRoute: MCP_ROUTE,
     apiHandler: mcpApiHandler,
     defaultHandler: createDefaultHandler(appFetch),
@@ -411,7 +326,9 @@ function createProvider(appFetch: AppFetch, resource: string) {
     scopesSupported: [...MCP_OAUTH_SCOPES],
     accessTokenTTL: MCP_ACCESS_TOKEN_TTL_SECONDS,
     refreshTokenTTL: MCP_REFRESH_TOKEN_TTL_SECONDS,
+    refreshTokenIdleTTL: MCP_REFRESH_TOKEN_TTL_SECONDS,
     clientRegistrationTTL: MCP_CLIENT_REGISTRATION_TTL_SECONDS,
+    allowPrivateUseRedirectUris: true,
     resourceMetadata: {
       resource,
       scopes_supported: [MCP_SCOPE],
@@ -433,10 +350,8 @@ function createProvider(appFetch: AppFetch, resource: string) {
         }),
       };
     },
-    onError: logOAuthError,
-  };
-
-  return new OAuthProvider(options);
+    onError: handleOAuthError,
+  });
 }
 
 export function createOpenSeoOAuthProvider(appFetch: AppFetch) {
@@ -465,13 +380,20 @@ export function createOpenSeoOAuthProvider(appFetch: AppFetch) {
       return getProvider().fetch(request, env, ctx);
     },
 
-    // Cron GC for OAUTH_KV: sweeps orphaned grants/tokens (e.g. from expired
-    // client registrations) that KV TTLs alone don't reclaim. The sweep only
-    // advances past live records by deleting dead ones, so give it a batch
-    // large enough to cover the whole keyspace in one pass while staying
-    // within the invocation's subrequest budget.
-    purgeExpiredData(env: OpenSeoOAuthEnv) {
-      return getProvider().purgeExpiredData(env, { batchSize: 200 });
+    // Resume the bounded sweep across cron runs, including past live records.
+    async purgeExpiredData(env: OpenSeoOAuthEnv) {
+      const cursor =
+        (await env.OAUTH_KV.get(OAUTH_PURGE_CURSOR_KEY)) ?? undefined;
+      const result = await getProvider().purgeExpiredData(env, {
+        batchSize: 200,
+        cursor,
+      });
+      if (result.cursor) {
+        await env.OAUTH_KV.put(OAUTH_PURGE_CURSOR_KEY, result.cursor);
+      } else {
+        await env.OAUTH_KV.delete(OAUTH_PURGE_CURSOR_KEY);
+      }
+      return result;
     },
   };
 }

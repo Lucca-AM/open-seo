@@ -4,46 +4,27 @@ import { computeNextCheckAt, estimateRankCheckCredits } from "./rank-tracking";
 describe("rank tracking cost estimates", () => {
   it.each([
     {
-      method: "live" as const,
-      keywordCount: 4,
-      devices: "desktop" as const,
-      depth: 10,
-      costUsd: 0.01024,
-      costCredits: 12,
-    },
-    {
-      method: "live" as const,
-      keywordCount: 1000,
-      devices: "both" as const,
-      depth: 40,
-      costUsd: 16.64,
-      costCredits: 18_000,
-    },
-    {
-      method: "queued" as const,
       keywordCount: 104,
       devices: "desktop" as const,
       depth: 10,
-      costUsd: 0.07987,
-      costCredits: 81,
+      costUsd: 0.47922,
+      costCredits: 486,
     },
     {
-      method: "queued" as const,
       keywordCount: 1000,
       devices: "both" as const,
       depth: 40,
-      costUsd: 4.992,
-      costCredits: 5_000,
+      costUsd: 29.952,
+      costCredits: 30_000,
     },
   ])(
-    "matches per-call billing for $method checks",
-    ({ keywordCount, devices, depth, method, costUsd, costCredits }) => {
+    "matches per-call billing for six queued reads of $keywordCount keywords",
+    ({ keywordCount, devices, depth, costUsd, costCredits }) => {
       expect(
         estimateRankCheckCredits(
           Array.from({ length: keywordCount }, (_, i) => `kw ${i}`),
           devices,
           depth,
-          method,
         ),
       ).toEqual({ costUsd, costCredits });
     },

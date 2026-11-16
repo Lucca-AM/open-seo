@@ -5,8 +5,11 @@ import {
   type OAuthProviderOptions,
   type TokenExchangeCallbackOptions,
 } from "@cloudflare/workers-oauth-provider";
+import type * as WorkersOAuthProvider from "@cloudflare/workers-oauth-provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { resolveHostedContext } from "@/middleware/ensure-user/hosted";
+import { checkGuestEligibility } from "@/server/auth/guest-accounts";
 import { createOpenSeoOAuthProvider } from "./oauth-provider";
 
 const mocks = vi.hoisted(() => ({
@@ -17,52 +20,17 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("cloudflare:workers", () => ({
   waitUntil: (promise: Promise<unknown>) => void promise,
+  // oxlint-disable-next-line typescript/no-extraneous-class -- runtime shim for the real provider's exported classes
+  WorkerEntrypoint: class {},
   // api-key-auth pulls the db client into this module graph; it reads env at
   // module load.
   env: {},
 }));
 
-// The whole module is doubled because the real one imports "cloudflare:workers"
-// at top level, which vitest's node environment cannot load even via
-// importOriginal. The error-class doubles must stay signature-compatible with
-// the real AuthorizationError/OAuthError.
-vi.mock("@cloudflare/workers-oauth-provider", () => {
-  class AuthorizationError extends Error {
-    readonly description: string;
-    readonly redirectUri?: string;
-    readonly state?: string;
-    readonly issuer?: string;
-
-    constructor(
-      readonly code: string,
-      options: {
-        description: string;
-        redirectUri?: string;
-        state?: string;
-        issuer?: string;
-      },
-    ) {
-      super(options.description);
-      this.description = options.description;
-      this.redirectUri = options.redirectUri;
-      this.state = options.state;
-      this.issuer = options.issuer;
-    }
-  }
-
-  class OAuthError extends Error {
-    constructor(
-      readonly code: string,
-      options?: { description?: string },
-    ) {
-      super(options?.description);
-    }
-  }
-
+vi.mock("@cloudflare/workers-oauth-provider", async (importOriginal) => {
+  const actual = await importOriginal<typeof WorkersOAuthProvider>();
   return {
-    AuthorizationError,
-    GrantType: { REFRESH_TOKEN: "refresh_token" },
-    OAuthError,
+    ...actual,
     OAuthProvider: class {
       constructor(options: OAuthProviderOptions<unknown>) {
         mocks.options.push(options);
@@ -95,8 +63,14 @@ vi.mock("@/middleware/ensure-user/hosted", () => ({
   resolveHostedContext: vi.fn(),
 }));
 
+vi.mock("@/server/auth/guest-accounts", () => ({
+  checkGuestEligibility: vi.fn(),
+}));
+
 vi.mock("@/server/features/activation/mcpActivation", () => ({
   recordMcpAuthorized: vi.fn(),
+  completeOnboardingFromAgent: vi.fn(),
+  markMcpConnected: vi.fn(),
 }));
 
 vi.mock("@/server/lib/posthog", () => ({
@@ -123,12 +97,15 @@ async function dispatch(
 
 function tokenExchangeOptions(
   requestedScope: string[],
-): TokenExchangeCallbackOptions {
+): TokenExchangeCallbackOptions<unknown> {
   return {
     grantType: GrantType.REFRESH_TOKEN,
     clientId: "client-1",
+    subjectClientId: "client-1",
     userId: "user-1",
     grantId: "grant-1",
+    resource: "https://app.openseo.so/mcp",
+    env: {},
     scope: ["offline_access", "mcp"],
     requestedScope,
     props: {
@@ -178,6 +155,16 @@ describe("OpenSEO OAuth provider configuration", () => {
     mocks.options.length = 0;
     mocks.requests.length = 0;
     mocks.purges.length = 0;
+    // Nobody is signed in, and the browser may have a guest account.
+    vi.mocked(resolveHostedContext).mockRejectedValue(
+      new Error("UNAUTHENTICATED"),
+    );
+    vi.mocked(checkGuestEligibility).mockResolvedValue({
+      eligible: true,
+      ipHash: "hash",
+      slot: 0,
+      agent: "chatgpt.com",
+    });
   });
 
   it("binds tokens and protected-resource metadata to the canonical MCP URL", async () => {
@@ -317,5 +304,30 @@ describe("OpenSEO OAuth provider configuration", () => {
         },
       ),
     ).rejects.toThrow("internal storage detail");
+  });
+
+  it("sends someone who chose Continue with ChatGPT to sign in, not to a guest account", async () => {
+    const provider = createOpenSeoOAuthProvider(() => new Response("app"));
+    await dispatch(provider, new Request("https://app.openseo.so/health"));
+    const authorize = async (query: string) => {
+      const response = await invokeDefaultHandler(
+        new Request(`https://app.openseo.so/api/auth/oauth2/authorize${query}`),
+        {
+          OAUTH_PROVIDER: {
+            parseAuthRequest: () =>
+              Promise.resolve({ redirectUri: "https://chatgpt.com/callback" }),
+          },
+        },
+      );
+      return new URL(response.headers.get("Location") ?? "");
+    };
+
+    expect((await authorize("?state=1")).pathname).toBe("/connect");
+
+    const signIn = await authorize("?state=1&target_flow=chatgpt_siwc");
+    expect(signIn.pathname).toBe("/sign-in");
+    expect(signIn.searchParams.get("redirect")).toBe(
+      "/api/auth/oauth2/authorize?state=1&target_flow=chatgpt_siwc",
+    );
   });
 });

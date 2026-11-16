@@ -15,7 +15,16 @@ import {
 import type { runBatch } from "@/db/runBatch";
 import type * as ServiceModule from "./GoogleAccountService";
 
+const oauth = vi.hoisted(() => ({
+  getGoogleAccessToken: vi.fn(),
+  revokeGoogleToken: vi.fn(),
+  deleteGscCache: vi.fn(),
+}));
 vi.mock("cloudflare:workers", () => ({ env: {} }));
+vi.mock("./googleOAuth", () => oauth);
+vi.mock("@/server/features/dashboard/services/DashboardCacheService", () => ({
+  DashboardCacheService: { deleteGscCache: oauth.deleteGscCache },
+}));
 let client: Client;
 const directory = mkdtempSync(join(tmpdir(), "google-account-removal-"));
 let service: typeof ServiceModule.GoogleAccountService;
@@ -72,18 +81,32 @@ beforeAll(async () => {
 
 afterAll(() => {
   client.close();
-  rmSync(directory, { recursive: true });
+  rmSync(directory, { recursive: true, force: true, maxRetries: 3 });
 });
 beforeEach(async () => {
+  oauth.getGoogleAccessToken.mockImplementation(
+    async ({ accountId }: { accountId: string }) => `token-${accountId}`,
+  );
   await client.executeMultiple(
     "DROP TRIGGER IF EXISTS fail_remove; DELETE FROM gsc_connections; DELETE FROM ga4_connections; DELETE FROM account;",
   );
 });
 
-async function grant(provider: string, accountId = "google-a", userId = "u1") {
+async function grant(
+  provider: string,
+  accountId = "google-a",
+  userId = "u1",
+  updatedAt = 1,
+) {
   await client.execute({
-    sql: "INSERT INTO account (id, account_id, provider_id, user_id, updated_at, access_token, refresh_token) VALUES (?, ?, ?, ?, 1, 'access', 'refresh')",
-    args: [`${provider}-${userId}-${accountId}`, accountId, provider, userId],
+    sql: "INSERT INTO account (id, account_id, provider_id, user_id, updated_at, access_token, refresh_token) VALUES (?, ?, ?, ?, ?, 'access', 'refresh')",
+    args: [
+      `${provider}-${userId}-${accountId}`,
+      accountId,
+      provider,
+      userId,
+      updatedAt,
+    ],
   });
 }
 async function mapping(
@@ -180,6 +203,23 @@ for (const provider of ["gsc", "ga4"] as const) {
   });
 }
 
+it("disconnects a removed member's mappings in that organization only", async () => {
+  for (const provider of ["gsc", "ga4"] as const) {
+    await mapping(provider, "p1"); // org1, the member leaving
+    await mapping(provider, "p2"); // org2, where they stay
+    await mapping(provider, "p3", "google-a", "u2"); // org1, a teammate
+  }
+  await service.disconnectMember("u1", "org1");
+  for (const table of ["gsc_connections", "ga4_connections"] as const) {
+    expect((await rows(table)).map((row) => row.project_id)).toEqual([
+      "p2",
+      "p3",
+    ]);
+  }
+  // Only the disconnected project's cached Search Console data goes.
+  expect(oauth.deleteGscCache.mock.calls).toEqual([["p1"]]);
+});
+
 it("includes legacy GSC mappings in removal without touching another user's legacy mappings", async () => {
   await grant("google-search-console");
   await mapping("gsc", "p1", null);
@@ -252,3 +292,30 @@ it.each(["same-account", "other-account", "other-user"] as const)(
     );
   },
 );
+
+it("revokes a removed grant only once no stored grant uses that Google account", async () => {
+  await grant("google-search-console");
+  await grant("google-analytics");
+  const input = {
+    provider: "gsc" as const,
+    accountId: "google-a",
+    userId: "u1",
+  };
+  await service.remove(input);
+  expect(oauth.revokeGoogleToken).not.toHaveBeenCalled();
+  await service.remove({ ...input, provider: "ga4" });
+  expect(oauth.revokeGoogleToken.mock.calls).toEqual([["token-google-a"]]);
+});
+
+it("purges and revokes grants no project uses that were last updated before the cutoff", async () => {
+  await grant("google-search-console", "unused");
+  await grant("google-search-console", "mapped");
+  await grant("google-analytics", "recent", "u1", 2_000);
+  await mapping("gsc", "p1", "mapped");
+  expect(await service.purgeUnusedGrants(new Date(1_000))).toBe(1);
+  expect((await rows("account")).map((row) => row.account_id)).toEqual([
+    "recent",
+    "mapped",
+  ]);
+  expect(oauth.revokeGoogleToken.mock.calls).toEqual([["token-unused"]]);
+});

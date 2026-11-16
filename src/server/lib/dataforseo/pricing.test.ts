@@ -29,19 +29,52 @@ describe("dataforseoPricing", () => {
       credits: 39,
     },
     {
-      name: "live SERP at the default depth (2 pages)",
-      estimateUsd: dataforseoPricing.serp.live({ keyword: "seo", ...location }),
-      rawUsd: 0.0035,
+      name: "merged SERP reads at the default depth (page 1)",
+      estimateUsd: dataforseoPricing.serp.readsTaskPost({
+        keyword: "seo",
+        ...location,
+      }),
+      rawUsd: 0.0036,
       credits: 5,
     },
     {
-      name: "live SERP for a keyword with a search operator (billed 5x)",
-      estimateUsd: dataforseoPricing.serp.live({
+      name: "merged SERP reads with final URLs (standard queue, half the rate)",
+      estimateUsd: dataforseoPricing.serp.readsTaskPost({
+        keyword: "seo",
+        ...location,
+        finalUrls: true,
+      }),
+      rawUsd: 0.0018,
+      credits: 3,
+    },
+    {
+      name: "merged SERP reads at depth 20",
+      estimateUsd: dataforseoPricing.serp.readsTaskPost({
+        keyword: "seo",
+        ...location,
+        depth: 20,
+      }),
+      rawUsd: 0.0063,
+      credits: 9,
+    },
+    {
+      name: "merged SERP reads at depth 100",
+      estimateUsd: dataforseoPricing.serp.readsTaskPost({
+        keyword: "seo",
+        ...location,
+        depth: 100,
+      }),
+      rawUsd: 0.0279,
+      credits: 36,
+    },
+    {
+      name: "merged SERP reads for a keyword with a search operator (billed 5x)",
+      estimateUsd: dataforseoPricing.serp.readsTaskPost({
         keyword: "site:example.com seo",
         ...location,
       }),
-      rawUsd: 0.0175,
-      credits: 23,
+      rawUsd: 0.018,
+      credits: 24,
     },
     {
       name: "Lighthouse run",
@@ -159,25 +192,10 @@ describe("dataforseoPricing", () => {
       })),
       ...location,
       depth: 20,
-      targetDomain: "example.com",
     });
-    expect(creditsForProviderUsd(estimateUsd)).toBe(
-      estimateRankCheckCredits(keywords, "desktop", 20, "queued").costCredits,
-    );
-  });
-
-  it("prices a live operator rank check the way the rank check estimate does", () => {
-    const keyword = "site:example.com seo";
-    const estimateUsd = dataforseoPricing.serp.rankCheck({
-      keyword,
-      keywordId: "id",
-      ...location,
-      device: "desktop",
-      depth: 20,
-      targetDomain: "example.com",
-    });
-    expect(creditsForProviderUsd(estimateUsd)).toBe(
-      estimateRankCheckCredits([keyword], "desktop", 20, "live").costCredits,
+    // The estimate is the worst case: six reads.
+    expect(6 * creditsForProviderUsd(estimateUsd)).toBe(
+      estimateRankCheckCredits(keywords, "desktop", 20).costCredits,
     );
   });
 });

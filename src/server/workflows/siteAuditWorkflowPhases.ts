@@ -9,6 +9,7 @@ import {
 } from "@/server/lib/audit/lighthouse";
 import {
   getOrigin,
+  isAuditablePageUrl,
   isSameOrigin,
   normalizeUrl,
 } from "@/server/lib/audit/url-utils";
@@ -53,6 +54,8 @@ type AuditPhasesParams = {
   config: AuditConfig;
   access?: CrawlerAccess | null;
   renderUsage: RenderUsage;
+  /** A metered rendered audit's credit hold, which the crawl must stay in. */
+  renderHold?: { deadlineAt: number; credits: number };
 };
 
 export async function runAuditPhases(
@@ -67,7 +70,6 @@ export async function runAuditPhases(
     startUrl,
     config,
     access,
-    renderUsage,
   } = params;
   const origin = getOrigin(startUrl);
   const maxPages = config.maxPages;
@@ -85,15 +87,13 @@ export async function runAuditPhases(
   // desync the frontier from already-persisted crawl batches).
   const robots = parseRobotsTxt(origin, discovery.robotsText);
   const crawl = await runCrawlPhase(step, {
-    auditId,
-    workflowInstanceId,
+    ...params,
     origin,
     maxPages,
     robots,
     seededCount: discovery.seededCount,
     renderJavaScript: config.renderJavaScript,
-    renderUsage,
-    access,
+    sitePlatform: config.sitePlatform,
   });
   await runLighthousePhase(step, {
     auditId,
@@ -161,6 +161,7 @@ async function runDiscoveryPhase(
       seen.add(normalized);
       if (!isSameOrigin(normalized, origin)) continue;
       if (!isCrawlableUrl(normalized)) continue;
+      if (!isAuditablePageUrl(normalized)) continue;
       if (!robots.isAllowed(normalized)) continue;
       seeds.push(normalized);
     }
@@ -379,12 +380,8 @@ async function finalizeAudit(args: {
       issueCount: linkIssues.length,
     });
     issues.push(...linkIssues);
-    if (crawl.rateLimited) {
-      issues.push({
-        issueType: "crawl-rate-limited",
-        pageId: null,
-        pageUrl: startUrl,
-      });
+    if (crawl.stopIssue) {
+      issues.push({ ...crawl.stopIssue, pageId: null, pageUrl: startUrl });
     }
     const persistStartedAt = Date.now();
     await AuditRepository.insertIssues(auditId, issues);

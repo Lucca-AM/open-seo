@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { everyAppAccountQueryOptions } from "@/client/features/every-app/everyAppAccountQueries";
 import { z } from "zod";
 import {
   Tabs,
@@ -17,8 +18,8 @@ import {
   CardTitle,
 } from "@/client/components/ui/card";
 import { PageHeader } from "@/client/components/PageHeader";
-import { ArrowUpRight, ShieldAlert } from "lucide-react";
-import { getAuthMode } from "@/lib/auth-mode";
+import { ArrowUpRight, Info } from "lucide-react";
+import { getClientAuthMode } from "@/lib/auth-mode";
 import { captureClientEvent } from "@/client/lib/posthog";
 import {
   agentUpdatePrompt,
@@ -26,8 +27,10 @@ import {
 } from "@/client/features/ai-mcp/agentSetupPrompt";
 import { CopyButton } from "@/client/components/CopyButton";
 import { AgentList } from "@/client/features/ai-mcp/AgentList";
+import { pageHead } from "@/client/lib/pageHead";
 
 const DOCS_URL = "https://openseo.so/docs/agent-setup";
+
 const COACH_DOCS_URL = "https://openseo.so/docs/skills/seo-coach";
 const LINK_CLASS =
   "text-foreground underline decoration-foreground/25 underline-offset-4 hover:decoration-foreground";
@@ -69,51 +72,14 @@ const aiSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_app/ai")({
+  head: () => pageHead("Agent setup"),
   validateSearch: aiSearchSchema,
   component: AiPage,
 });
 
-// Cloudflare Access publishes an authorization-server document on the
-// application's own origin once Managed OAuth is on, and that document is what
-// an MCP client follows to register. Probing it answers the question the
-// banner is actually asking — can a client authenticate — instead of warning
-// every cloudflare_access deployment forever, including the ones already set
-// up correctly, with no way to dismiss it.
-function useManagedOAuthConfigured(): boolean | null {
-  const [configured, setConfigured] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void fetch("/.well-known/oauth-authorization-server", {
-      headers: { Accept: "application/json" },
-    })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: unknown) => {
-        if (cancelled) return;
-        const endpoint =
-          body && typeof body === "object"
-            ? (body as { registration_endpoint?: unknown })
-                .registration_endpoint
-            : undefined;
-        setConfigured(typeof endpoint === "string" && endpoint.length > 0);
-      })
-      // A failed probe proves nothing either way, so stay quiet rather than
-      // accuse a working deployment of being misconfigured.
-      .catch(() => {
-        if (!cancelled) setConfigured(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return configured;
-}
+const everyApp = getClientAuthMode() === "everyapp";
 
 function AiPage() {
-  const managedOAuthConfigured = useManagedOAuthConfigured();
   const { tab = "setup" } = Route.useSearch();
   const navigate = Route.useNavigate();
   const origin = window.location.origin;
@@ -143,126 +109,141 @@ function AiPage() {
             <TabsTrigger value="skills">Skills</TabsTrigger>
           </TabsList>
           <TabsContent value="setup">
-            <div className="mt-6 space-y-5">
-              <Card size="lg">
-                <CardHeader>
-                  <CardTitle>
-                    <h2>Set up your agent</h2>
-                  </CardTitle>
-                  <CardDescription>
-                    Paste the setup prompt into your agent to connect OpenSEO
-                    and install its SEO skills. It will guide you through any
-                    manual steps.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <AgentList />
-                  <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
-                    <CopyButton
-                      variant="default"
-                      size="lg"
-                      value={prompt}
-                      label="Copy setup prompt"
-                      successMessage="Setup prompt copied"
-                      onCopy={() => captureClientEvent("mcp:setup_prompt_copy")}
-                    />
-                    <a
-                      href={`${DOCS_URL}#set-up-your-agent`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={MUTED_LINK_CLASS}
-                    >
-                      Setup instructions
-                      <ArrowUpRight className="size-3.5" />
-                    </a>
-                  </div>
-                </CardContent>
-                <CardFooter className="text-muted-foreground">
-                  <p>
-                    Once connected, ask your agent to use{" "}
-                    <a
-                      href={COACH_DOCS_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={LINK_CLASS}
-                    >
-                      SEO Coach
-                    </a>{" "}
-                    to help you choose what to do next.
-                  </p>
-                </CardFooter>
-              </Card>
+            {everyApp ? (
+              <EveryAppAgentSetup />
+            ) : (
+              <>
+                <div className="mt-6 space-y-5">
+                  <Card size="lg">
+                    <CardHeader>
+                      <CardTitle>
+                        <h2>Set up your agent</h2>
+                      </CardTitle>
+                      <CardDescription>
+                        Paste the setup prompt into your agent to connect
+                        OpenSEO and install its SEO skills. It will guide you
+                        through any manual steps.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <AgentList />
+                      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+                        <CopyButton
+                          variant="default"
+                          size="lg"
+                          value={prompt}
+                          label="Copy setup prompt"
+                          successMessage="Setup prompt copied"
+                          onCopy={() =>
+                            captureClientEvent("mcp:setup_prompt_copy")
+                          }
+                        />
+                        <a
+                          href={`${DOCS_URL}#set-up-your-agent`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={MUTED_LINK_CLASS}
+                        >
+                          Setup instructions
+                          <ArrowUpRight className="size-3.5" />
+                        </a>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="text-muted-foreground">
+                      <p>
+                        Once connected, ask your agent to use{" "}
+                        <a
+                          href={COACH_DOCS_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={LINK_CLASS}
+                        >
+                          SEO Coach
+                        </a>{" "}
+                        to help you choose what to do next.
+                      </p>
+                    </CardFooter>
+                  </Card>
 
-              <Card size="lg">
-                <CardHeader>
-                  <CardTitle>
-                    <h2>Update your skills</h2>
-                  </CardTitle>
-                  <CardDescription>
-                    Already connected? Paste the update prompt into your agent
-                    to get the latest OpenSEO skills while preserving your
-                    connection settings and personal edits.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                  <Card size="lg">
+                    <CardHeader>
+                      <CardTitle>
+                        <h2>Update your skills</h2>
+                      </CardTitle>
+                      <CardDescription>
+                        Already connected? Paste the update prompt into your
+                        agent to get the latest OpenSEO skills while preserving
+                        your connection settings and personal edits.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                      <CopyButton
+                        variant="default"
+                        size="lg"
+                        value={agentUpdatePrompt}
+                        label="Copy update prompt"
+                        successMessage="Update prompt copied"
+                        onCopy={() =>
+                          captureClientEvent("mcp:update_prompt_copy")
+                        }
+                      />
+                      <a
+                        href={`${DOCS_URL}#update-your-skills`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={MUTED_LINK_CLASS}
+                      >
+                        Update instructions
+                        <ArrowUpRight className="size-3.5" />
+                      </a>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {getClientAuthMode() === "cloudflare_access" ? (
+                  <Alert className="mt-8">
+                    <Info />
+                    <AlertDescription>
+                      This instance is behind Cloudflare Access, so MCP clients
+                      connect through Managed OAuth on your Access application.
+                      If a client gets a login page instead of connecting, check
+                      that Managed OAuth is on.{" "}
+                      <a
+                        href="https://github.com/every-app/open-seo/blob/main/docs/SELF_HOSTING_CLOUDFLARE_OPERATIONS.md#through-cloudflare-access"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium"
+                      >
+                        Setup guide
+                      </a>
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                <div className="mt-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
+                  <span>
+                    MCP server URL for this instance:{" "}
+                    <code className="font-mono text-foreground/80">
+                      {mcpUrl}
+                    </code>
+                  </span>
                   <CopyButton
-                    variant="default"
-                    size="lg"
-                    value={agentUpdatePrompt}
-                    label="Copy update prompt"
-                    successMessage="Update prompt copied"
-                    onCopy={() => captureClientEvent("mcp:update_prompt_copy")}
+                    value={mcpUrl}
+                    successMessage="MCP URL copied"
+                    onCopy={() => captureClientEvent("mcp:setup_url_copy")}
                   />
-                  <a
-                    href={`${DOCS_URL}#update-your-skills`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={MUTED_LINK_CLASS}
-                  >
-                    Update instructions
-                    <ArrowUpRight className="size-3.5" />
-                  </a>
-                </CardContent>
-              </Card>
-            </div>
-
-            {getAuthMode(import.meta.env.AUTH_MODE) === "cloudflare_access" &&
-            managedOAuthConfigured === false ? (
-              <Alert variant="warning" className="mt-8">
-                <ShieldAlert />
-                <AlertDescription>
-                  This instance is behind Cloudflare Access. MCP clients cannot
-                  connect until Managed OAuth is enabled on your Access
-                  application.{" "}
-                  <a
-                    href="https://openseo.so/docs/self-hosting/cloudflare#connect-the-mcp-server-through-cloudflare-access"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-medium"
-                  >
-                    Setup guide
-                  </a>
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            <div className="mt-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
-              <span>
-                MCP server URL for this instance:{" "}
-                <code className="font-mono text-foreground/80">{mcpUrl}</code>
-              </span>
-              <CopyButton
-                value={mcpUrl}
-                successMessage="MCP URL copied"
-                onCopy={() => captureClientEvent("mcp:setup_url_copy")}
-              />
-            </div>
+                </div>
+              </>
+            )}
           </TabsContent>
           <TabsContent value="skills">
             <section className="mt-6">
               <p className="text-sm text-muted-foreground">
-                The setup prompt installs these. Run one by name when you want a
-                full report instead of a quick answer.
+                {everyApp
+                  ? "Install them with npx skills add every-app/open-seo."
+                  : "The setup prompt installs these."}{" "}
+                Run one by name when you want a full report instead of a quick
+                answer.
               </p>
               <ul className="mt-5 space-y-3 text-sm sm:space-y-2">
                 {SKILLS.map(([name, blurb]) => (
@@ -286,6 +267,74 @@ function AiPage() {
           </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+const EVERY_APP_SKILLS_COMMAND = "npx skills add every-app/open-seo";
+
+/**
+ * Behind Every App the agent connects to the gateway's MCP address, which
+ * covers every app on it; OpenSEO serves no MCP of its own here. The skills
+ * install on their own.
+ */
+function EveryAppAgentSetup() {
+  const gatewayUrl = useQuery(everyAppAccountQueryOptions()).data?.gatewayUrl;
+  return (
+    <div className="mt-6 space-y-5">
+      <Card size="lg">
+        <CardHeader>
+          <CardTitle>
+            <h2>Connect your agent to Every App</h2>
+          </CardTitle>
+          <CardDescription>
+            Every App has one address for your agent, and it covers OpenSEO and
+            your other apps. Connect it once.
+          </CardDescription>
+        </CardHeader>
+        {gatewayUrl ? (
+          <CardContent className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            <code className="font-mono text-sm">{gatewayUrl}/mcp</code>
+            <CopyButton
+              value={`${gatewayUrl}/mcp`}
+              successMessage="MCP URL copied"
+            />
+          </CardContent>
+        ) : null}
+      </Card>
+
+      <Card size="lg">
+        <CardHeader>
+          <CardTitle>
+            <h2>Install the SEO skills</h2>
+          </CardTitle>
+          <CardDescription>
+            Run this in a terminal to add OpenSEO's skills to your agent. They
+            use OpenSEO through your Every App connection.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <code className="font-mono text-sm">{EVERY_APP_SKILLS_COMMAND}</code>
+          <CopyButton
+            value={EVERY_APP_SKILLS_COMMAND}
+            successMessage="Command copied"
+          />
+        </CardContent>
+        <CardFooter className="text-muted-foreground">
+          <p>
+            Once connected, ask your agent to use{" "}
+            <a
+              href={COACH_DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+              className={LINK_CLASS}
+            >
+              SEO Coach
+            </a>{" "}
+            to help you choose what to do next.
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   );
 }

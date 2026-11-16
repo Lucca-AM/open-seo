@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sortBy } from "remeda";
 import { z } from "zod";
-import { createOpenSeoOAuthProvider } from "./oauth-provider";
+import { createKvFake } from "./oauth-kv-test-support";
+import {
+  createOpenSeoOAuthProvider,
+  getCapturedOAuthHelpers,
+} from "./oauth-provider";
 
 // End-to-end OAuth lifecycle against the REAL @cloudflare/workers-oauth-provider
 // (only the Workers runtime shims and app session resolution are mocked),
@@ -40,6 +45,8 @@ vi.mock("@/middleware/ensure-user/hosted", () => ({
 
 vi.mock("@/server/features/activation/mcpActivation", () => ({
   recordMcpAuthorized: () => Promise.resolve(),
+  completeOnboardingFromAgent: () => Promise.resolve(),
+  markMcpConnected: () => Promise.resolve(),
 }));
 
 vi.mock("@/server/lib/posthog", () => ({
@@ -55,72 +62,6 @@ vi.mock("@/server/mcp/transport", () => ({
   ): Promise<Response> => Promise.resolve(Response.json({ props })),
 }));
 
-// Minimal in-memory KVNamespace honoring expirationTtl against Date.now(), so
-// vi.setSystemTime drives token/grant expiry.
-function createKvFake() {
-  const store = new Map<
-    string,
-    { value: string; metadata?: unknown; expiresAt?: number }
-  >();
-  const live = (key: string) => {
-    const entry = store.get(key);
-    if (!entry) return undefined;
-    if (entry.expiresAt !== undefined && Date.now() >= entry.expiresAt) {
-      store.delete(key);
-      return undefined;
-    }
-    return entry;
-  };
-  return {
-    get(key: string, type?: unknown) {
-      const entry = live(key);
-      if (!entry) return Promise.resolve(null);
-      const wantsJson =
-        type === "json" ||
-        (typeof type === "object" &&
-          type !== null &&
-          (type as { type?: string }).type === "json");
-      return Promise.resolve(wantsJson ? JSON.parse(entry.value) : entry.value);
-    },
-    put(
-      key: string,
-      value: string,
-      options?: { expirationTtl?: number; metadata?: unknown },
-    ) {
-      store.set(key, {
-        value,
-        metadata: options?.metadata,
-        expiresAt:
-          options?.expirationTtl !== undefined
-            ? Date.now() + options.expirationTtl * 1000
-            : undefined,
-      });
-      return Promise.resolve();
-    },
-    delete(key: string) {
-      store.delete(key);
-      return Promise.resolve();
-    },
-    list(options?: { prefix?: string; cursor?: string; limit?: number }) {
-      const keys = [...store.keys()]
-        .filter((key) => live(key))
-        .filter((key) => !options?.prefix || key.startsWith(options.prefix))
-        .slice(0, options?.limit ?? 1000)
-        .map((name) => {
-          const entry = store.get(name);
-          return {
-            name,
-            metadata: entry?.metadata,
-            expiration: entry?.expiresAt
-              ? Math.floor(entry.expiresAt / 1000)
-              : undefined,
-          };
-        });
-      return Promise.resolve({ keys, list_complete: true, cursor: "" });
-    },
-  };
-}
-
 const ctx: ExecutionContext = {
   waitUntil() {},
   passThroughOnException() {},
@@ -134,11 +75,12 @@ let provider: Provider;
 let env: Env;
 
 beforeEach(() => {
-  vi.useRealTimers();
   provider = createOpenSeoOAuthProvider(() => new Response("app"));
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the provider touches only OAUTH_KV
   env = { OAUTH_KV: createKvFake() } as unknown as Env;
 });
+
+afterEach(() => vi.useRealTimers());
 
 const registrationSchema = z.looseObject({
   client_id: z.string(),
@@ -277,11 +219,15 @@ async function callMcp(accessToken: string) {
   return propsEchoSchema.parse(await response.json()).props.openSeoAuth;
 }
 
+async function connect(clientId: string) {
+  const codeVerifier = randomBytes(32).toString("base64url");
+  const code = await authorizeAndGetCode(clientId, codeVerifier);
+  return exchangeCode(clientId, code, codeVerifier);
+}
+
 async function setupSession() {
   const client = await registerCodexStyleClient();
-  const codeVerifier = randomBytes(32).toString("base64url");
-  const code = await authorizeAndGetCode(client.client_id, codeVerifier);
-  const tokens = await exchangeCode(client.client_id, code, codeVerifier);
+  const tokens = await connect(client.client_id);
   return { client, tokens };
 }
 
@@ -299,8 +245,12 @@ describe("Codex-style OAuth token refresh (real workers-oauth-provider)", () => 
     expect(auth.scopes).toContain("mcp");
   });
 
-  it("refreshes with client_id only and the new token still carries the mcp scope", async () => {
+  it("keeps an active session beyond its original expiry, then expires after inactivity", async () => {
     const { client, tokens } = await setupSession();
+    const day = 24 * 60 * 60 * 1000;
+    const startedAt = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(startedAt + 29 * day);
 
     const response = await refresh(client.client_id, tokens.refresh_token);
     expect(response.status).toBe(200);
@@ -311,9 +261,97 @@ describe("Codex-style OAuth token refresh (real workers-oauth-provider)", () => 
     expect(auth.scopes).toContain("mcp");
     expect(auth.clientId).toBe(client.client_id);
 
-    // And the rotated refresh token keeps working for the next cycle.
+    vi.setSystemTime(startedAt + 31 * day);
     const second = await refresh(client.client_id, refreshed.refresh_token);
     expect(second.status).toBe(200);
+    const rotated = tokenResponseSchema.parse(await second.json());
+    expect((await callMcp(rotated.access_token)).scopes).toContain("mcp");
+
+    vi.setSystemTime(startedAt + 62 * day);
+    const expired = await refresh(client.client_id, rotated.refresh_token);
+    expect(expired.status).toBe(400);
+    const body = tokenErrorSchema
+      .extend({ error_description: z.string() })
+      .parse(await expired.json());
+    expect(body.error).toBe("invalid_grant");
+    expect(body.error_description).toContain(
+      "https://openseo.so/docs/agent-setup",
+    );
+  });
+
+  // ChatGPT reuses the client it registered for an app and Claude can hold one
+  // for a directory entry, so two accounts or workspaces signed in to the same
+  // OpenSEO login can arrive with the same client id.
+  it("keeps an earlier connection signed in when the same client connects again", async () => {
+    const { client, tokens: first } = await setupSession();
+    const second = await connect(client.client_id);
+
+    const response = await refresh(client.client_id, first.refresh_token);
+    expect(response.status).toBe(200);
+    const refreshed = tokenResponseSchema.parse(await response.json());
+    expect((await callMcp(refreshed.access_token)).userId).toBe("user-1");
+    expect((await callMcp(second.access_token)).userId).toBe("user-1");
+  });
+
+  it("disconnects only the revoked connection of a client connected twice", async () => {
+    const { client, tokens: first } = await setupSession();
+    const second = await connect(client.client_id);
+    const oauth = getCapturedOAuthHelpers();
+    const grants = (await oauth.listUserGrants("user-1")).items;
+    expect(grants).toHaveLength(2);
+
+    await oauth.revokeGrant(grants[0].id, "user-1");
+
+    const statuses = await Promise.all(
+      [first, second].map(async (token) => {
+        const response = await refresh(client.client_id, token.refresh_token);
+        return response.status;
+      }),
+    );
+    expect(sortBy(statuses, (status) => status)).toEqual([200, 400]);
+  });
+
+  it("resumes OAuth cleanup across grant and token pages, then resets the cursor", async () => {
+    const client = await registerCodexStyleClient();
+    for (let index = 0; index < 200; index++) {
+      const id = String(index).padStart(3, "0");
+      await env.OAUTH_KV.put(
+        `grant:user-1:${id}`,
+        JSON.stringify({ id, userId: "user-1", clientId: client.client_id }),
+      );
+      await env.OAUTH_KV.put(
+        `token:${id}`,
+        JSON.stringify({ userId: "user-1", grantId: id }),
+      );
+    }
+    const orphanedGrant = "grant:user-1:zzz";
+    const orphanedToken = "token:zzz";
+    await env.OAUTH_KV.put(
+      orphanedGrant,
+      JSON.stringify({
+        id: "zzz",
+        userId: "user-1",
+        clientId: "missing-client",
+      }),
+    );
+    await env.OAUTH_KV.put(
+      orphanedToken,
+      JSON.stringify({ userId: "missing-user", grantId: "missing-grant" }),
+    );
+
+    expect((await provider.purgeExpiredData(env)).done).toBe(false);
+    expect(await env.OAUTH_KV.get("purge-cursor")).not.toBeNull();
+    expect(await env.OAUTH_KV.get(orphanedGrant)).not.toBeNull();
+
+    const nextRun = createOpenSeoOAuthProvider(() => new Response("app"));
+    expect((await nextRun.purgeExpiredData(env)).done).toBe(false);
+    expect(await env.OAUTH_KV.get(orphanedGrant)).toBeNull();
+    expect(await env.OAUTH_KV.get(orphanedToken)).not.toBeNull();
+
+    expect((await nextRun.purgeExpiredData(env)).done).toBe(true);
+    expect(await env.OAUTH_KV.get(orphanedToken)).toBeNull();
+    expect(await env.OAUTH_KV.get("purge-cursor")).toBeNull();
+    expect(await env.OAUTH_KV.get("grant:user-1:000")).not.toBeNull();
   });
 
   it("accepts a refresh carrying the canonical RFC 8707 resource and rejects a mismatched one", async () => {

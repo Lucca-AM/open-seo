@@ -45,7 +45,6 @@ const authContext: ToolAuthContext = {
   userEmail: "user@example.com",
   organizationId: "org-1",
   role: "owner",
-  orgScope: "pinned",
   clientId: "client-1",
   scopes: ["mcp"],
   baseUrl: "https://app.openseo.so",
@@ -98,13 +97,26 @@ describe("instrumentMcpToolHandler", () => {
     expect(mocks.recordExternalMcpToolCall).not.toHaveBeenCalled();
   });
 
-  it("explains an out-of-credits call to the agent instead of the bare code", async () => {
+  it("explains an out-of-credits call to the agent with a billing link instead of the bare code", async () => {
     const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () => {
       throw new AppError("INSUFFICIENT_CREDITS");
     });
 
     await expect(wrapped({}, toolContext)).rejects.toThrow(
-      "doesn't have enough credits for this request",
+      "The organization owner can add credits at https://app.openseo.so/billing",
+    );
+  });
+
+  it("gives a paid-plan refusal the same billing link, after the tool's own message", async () => {
+    const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () => {
+      throw new AppError(
+        "PAYMENT_REQUIRED",
+        "Upgrade to the paid plan to use Prompt Explorer",
+      );
+    });
+
+    await expect(wrapped({}, toolContext)).rejects.toThrow(
+      "Upgrade to the paid plan to use Prompt Explorer. Retrying won't help. The organization owner can manage the plan at https://app.openseo.so/billing",
     );
   });
 
@@ -133,7 +145,7 @@ describe("instrumentMcpToolHandler", () => {
       },
     });
     expect(mocks.recordExternalMcpToolCall).toHaveBeenCalledExactlyOnceWith(
-      "org-1",
+      authContext,
     );
   });
 

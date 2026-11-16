@@ -9,15 +9,26 @@ import type { WorkflowStepConfig } from "cloudflare:workers";
  * step now has a timeout sized to its real work and a small retry budget.
  */
 
+/** Redirect probe of the start URL: up to 5 hops at 10s each. */
+export const START_URL_STEP: WorkflowStepConfig = {
+  retries: { limit: 2, delay: "5 seconds", backoff: "exponential" },
+  timeout: "2 minutes",
+};
+
 /** Robots + sitemap walk (bounded at 300 docs / 15s per fetch internally). */
 export const DISCOVERY_STEP: WorkflowStepConfig = {
   retries: { limit: 2, delay: "5 seconds", backoff: "exponential" },
   timeout: "4 minutes",
 };
 
-/** One crawl chunk: ~90s soft crawl deadline + persistence headroom. */
+/**
+ * One crawl chunk: ~90s soft crawl deadline + persistence headroom. Workflows
+ * now and then loses an attempt whose code finished (WorkflowInternalError),
+ * and a long audit runs enough chunks to hit two losses in a row, so one
+ * retry is not enough. Chunk writes are idempotent.
+ */
 export const CRAWL_CHUNK_STEP: WorkflowStepConfig = {
-  retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
+  retries: { limit: 3, delay: "10 seconds", backoff: "constant" },
   timeout: "5 minutes",
 };
 

@@ -33,6 +33,7 @@ import {
   getCodeChallenge,
   getCodeVerifier,
 } from "./googleOAuthState";
+import { ownGoogleCallbackDisabled } from "./googleAccess";
 
 /**
  * Google data grants (Search Console, Analytics) are linked here rather than
@@ -50,8 +51,11 @@ import {
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 // Refresh when the stored access token is within this many ms of expiry.
 const ACCESS_TOKEN_SKEW_MS = 5_000;
+// Google's token endpoint answers in well under a second; past this it is down.
+const TOKEN_TIMEOUT_MS = 10_000;
 
 export type GoogleOAuthIntegration = {
   provider: GoogleLinkProvider;
@@ -175,12 +179,15 @@ async function upsertGrant(input: {
     });
 }
 
-/** Google's token endpoint; null when it rejects the grant. */
+/** Google's token endpoint; null when it rejects the grant. A slow endpoint
+ *  rejects with a TimeoutError instead, which callers must not read as a
+ *  revoked grant. */
 async function fetchTokens(params: Record<string, string>) {
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
   });
   if (!response.ok) return null;
   return googleTokenResponseSchema.parse(await response.json());
@@ -402,10 +409,34 @@ export async function getGoogleAccessToken(input: {
   return tokens.access_token;
 }
 
+/**
+ * Revokes a Google access or refresh token. Google revokes the whole grant
+ * the token belongs to (every scope this OAuth client holds for that Google
+ * account), so callers must make sure no other stored grant still needs it.
+ */
+export async function revokeGoogleToken(token: string): Promise<void> {
+  const response = await fetch(GOOGLE_REVOKE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token }),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+  });
+  // Google answers 400 invalid_token for an already-revoked or expired token,
+  // which leaves no live grant either way.
+  if (!response.ok && response.status !== 400) {
+    throw new Error(`Google token revocation failed: ${response.status}`);
+  }
+}
+
 export async function handleGoogleOAuthCallbackRequest(
   request: Request,
   integration: GoogleOAuthIntegration,
 ) {
+  // Behind an Every App gateway the gateway holds Google, so OpenSEO's own
+  // callback doesn't exist there (googleAccess.ts).
+  if (await ownGoogleCallbackDisabled()) {
+    return new Response("Not found", { status: 404 });
+  }
   try {
     const context = await resolveUserContextFromHeaders(request.headers);
     return await handleGoogleOAuthCallback({

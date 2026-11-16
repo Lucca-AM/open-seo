@@ -20,6 +20,7 @@ vi.mock("@/server/features/gsc/services/GscService", async () => ({
 }));
 vi.mock("./DashboardCacheService", () => ({
   DashboardCacheService: {
+    gscNamespace: () => "dashboard:gsc",
     readThrough: async (input: { load: () => Promise<unknown> }) => ({
       value: await input.load(),
     }),
@@ -66,6 +67,22 @@ it("surfaces only queries above the threshold and absent from baseline data", as
       rows: [row("new"), row("existing"), row("too small", 9)],
     })
     .mockResolvedValueOnce({ ...performanceBase, rows: [row("existing")] });
+  const result = await DashboardSiteService.getEmergingQueries(
+    "project",
+    "org",
+  );
+  expect(result.value.rows.map((item) => item.query)).toEqual(["new"]);
+});
+
+it("leaves out bot searches that use Google search operators", async () => {
+  vi.mocked(GscService.getPerformance).mockResolvedValueOnce({
+    ...performanceBase,
+    rows: [
+      row("ads manager slideshow -filetype:pdf -site:youtube.com", 25),
+      row("site:example.com"),
+      row("new"),
+    ],
+  });
   const result = await DashboardSiteService.getEmergingQueries(
     "project",
     "org",

@@ -25,6 +25,12 @@ const querySchema = z.object({
   impressions: z.number(),
   position: z.number(),
 });
+// Scrapers and AI tools send Google queries stuffed with operators like
+// "-site:youtube.com -filetype:pdf". Each one is unique, so they keep showing
+// up as new keywords even though no person searched them.
+const SEARCH_OPERATOR =
+  /(?:^|\s)-?(?:site|filetype|(?:all)?in(?:url|title|text)):\S/i;
+
 const queriesSchema = z.object({
   connected: z.boolean(),
   hasSearchData: z.boolean(),
@@ -39,7 +45,7 @@ async function getBacklinks(
   billingCustomer: BillingCustomerContext,
 ) {
   const result = await DashboardCacheService.readThrough({
-    namespace: "dashboard:links",
+    namespace: "dashboard:links:v2",
     organizationId: billingCustomer.organizationId,
     params: input,
     schema: z.array(backlinksItemSchema),
@@ -59,7 +65,6 @@ async function getBacklinks(
         limit: 25,
         mode: "one_per_domain",
         status: input.kind === "lost" ? "lost" : "live",
-        hideSpam: false,
         orderBy: [input.kind === "lost" ? "last_seen,desc" : "first_seen,desc"],
         filters:
           input.kind === "all"
@@ -91,7 +96,7 @@ async function getKeywords(projectId: string, organizationId: string) {
       refreshError: null,
     };
   return DashboardCacheService.readThrough({
-    namespace: "dashboard:gsc-keywords-v2",
+    namespace: DashboardCacheService.gscNamespace(projectId, "keywords"),
     organizationId,
     params: {
       projectId,
@@ -106,6 +111,7 @@ async function getKeywords(projectId: string, organizationId: string) {
       endDate: z.string(),
     }),
     maxAgeMs: 86400_000,
+    shouldCache: (value) => value.connected,
     load: async () => {
       try {
         const result = await GscService.getPerformance({
@@ -142,10 +148,7 @@ async function getKeywords(projectId: string, organizationId: string) {
 }
 
 async function getEmergingQueries(projectId: string, organizationId: string) {
-  const { endDate } = resolveDateRange({ dateRange: "last_7_days" });
-  const startDate = new Date(Date.parse(endDate) - 6 * 86400_000)
-    .toISOString()
-    .slice(0, 10);
+  const { startDate, endDate } = resolveDateRange({ dateRange: "last_7_days" });
   const baselineEndDate = new Date(Date.parse(startDate) - 86400_000)
     .toISOString()
     .slice(0, 10);
@@ -169,17 +172,21 @@ async function getEmergingQueries(projectId: string, organizationId: string) {
     };
   }
   return DashboardCacheService.readThrough({
-    namespace: "dashboard:emerging-queries",
+    namespace: DashboardCacheService.gscNamespace(
+      projectId,
+      "emerging-queries",
+    ),
     organizationId,
     params: {
       projectId,
       siteUrl: connection.siteUrl,
       accountId: connection.gscAccountId,
       updatedAt: connection.updatedAt,
-      comparison: "verified-v3",
+      comparison: "verified-v4",
     },
     schema: queriesSchema,
     maxAgeMs: 86400_000,
+    shouldCache: (value) => value.connected,
     load: async () => {
       try {
         const [recent, baseline] = await Promise.all([
@@ -204,7 +211,10 @@ async function getEmergingQueries(projectId: string, organizationId: string) {
         const observed = recent.rows
           .filter(
             (row) =>
-              row.keys?.[0] && row.impressions >= 10 && !seen.has(row.keys[0]),
+              row.keys?.[0] &&
+              row.impressions >= 10 &&
+              !seen.has(row.keys[0]) &&
+              !SEARCH_OPERATOR.test(row.keys[0]),
           )
           .map((row) => ({
             query: row.keys![0],
@@ -286,7 +296,7 @@ async function getLinkActivity(
     scope: "subdomains",
   }).apiTarget;
   const domains = await DashboardCacheService.readThrough({
-    namespace: "dashboard:new-domains",
+    namespace: "dashboard:new-domains:v2",
     organizationId: billingCustomer.organizationId,
     params: { target },
     schema: z.array(referringDomainItemSchema),
@@ -301,7 +311,6 @@ async function getLinkActivity(
         target,
         includeSubdomains: true,
         limit: 25,
-        hideSpam: false,
         orderBy: ["first_seen,desc"],
         filters: [["first_seen", ">=", `${from} 00:00:00 +00:00`]],
       });

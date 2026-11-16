@@ -41,11 +41,18 @@ async function addKeywords(
   for (const raw of keywords) {
     if (rows.length >= available) break;
     const trimmed = raw.trim();
-    const normalized = matchCase ? trimmed : trimmed.toLowerCase();
+    // Lowercase with the tracker's language: Turkish "İstanbul" and "KIRMIZI"
+    // become "istanbul" and "kırmızı", not different words.
+    const normalized = matchCase
+      ? trimmed
+      : trimmed.toLocaleLowerCase(config.languageCode);
     if (
       normalized &&
       !seen.has(normalized) &&
-      !existingKeywords.has(normalized)
+      !existingKeywords.has(normalized) &&
+      // Rows added before language-aware lowercasing used toLowerCase(), so
+      // a Turkish re-add must not create a twin of that older row.
+      (matchCase || !existingKeywords.has(trimmed.toLowerCase()))
     ) {
       seen.add(normalized);
       rows.push({
@@ -159,7 +166,6 @@ async function estimateCost(
     keywords,
     config.devices,
     config.serpDepth,
-    "live",
   );
   const scheduleInterval = isScheduledRankTrackingInterval(
     config.scheduleInterval,
@@ -172,7 +178,6 @@ async function estimateCost(
     keywordCount,
     devicesCount: devicesCount(config.devices),
     totalChecks: keywordCount * devicesCount(config.devices),
-    method: "live" as const,
     existingKeywordCount,
     additionalKeywordCount: keywordCount - existingKeywordCount,
     scheduledEstimate: scheduleInterval
@@ -203,7 +208,7 @@ function scheduledApprovalError(
 ) {
   return new AppError(
     "VALIDATION_ERROR",
-    `Adding these keywords would make each ${scheduleInterval} scheduled check cost a nominal queued estimate of ${estimate.costCredits} credits (~$${estimate.costUsd.toFixed(4)} per check; ~${estimate.monthlyCostCredits} credits/month). Call estimate_rank_tracker_cost with additionalKeywords, show the recurring estimate and live-fallback caveat to the user, then retry with maxEstimatedScheduledCheckCredits set to the approved per-check estimate. Live fallback for rejected, failed, or timed-out queued tasks may use additional separately billed credits.`,
+    `Adding these keywords would make each ${scheduleInterval} scheduled check cost up to ${estimate.costCredits} credits including retries (~$${estimate.costUsd.toFixed(4)} per check; up to ~${estimate.monthlyCostCredits} credits/month). Call estimate_rank_tracker_cost with additionalKeywords, show the recurring estimate to the user, then retry with maxEstimatedScheduledCheckCredits set to the approved per-check estimate.`,
   );
 }
 
