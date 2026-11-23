@@ -79,6 +79,11 @@ jobs:
           name: everyapp-release
           path: everyapp-release.tar.gz
           if-no-files-found: error
+          # Fork patch (Lucca-AM): a pull request's tarball only proves the
+          # release packs; nothing installs it. Kept the default 90 days, one a
+          # week from the upstream sync filled the account's Actions storage
+          # (November 2026). A release keeps 90.
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 90 }}
 
       - name: Attach the tarball to the release
         if: github.event_name != 'pull_request'
